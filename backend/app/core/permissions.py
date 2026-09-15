@@ -1,0 +1,36 @@
+from app.models.role import RoleEnum
+
+# permission string convention: "<resource>:<action>"
+PERMISSIONS: dict[str, set[RoleEnum]] = {
+    "employee:create": {RoleEnum.ADMIN, RoleEnum.HR},
+    "employee:read_all": {RoleEnum.ADMIN, RoleEnum.HR},
+    "employee:read_self": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "employee:update": {RoleEnum.ADMIN, RoleEnum.HR},
+    "employee:delete": {RoleEnum.ADMIN},
+
+    "department:write": {RoleEnum.ADMIN},
+    "department:read": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "designation:write": {RoleEnum.ADMIN},
+    "designation:read": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+
+    "attendance:check_in_out": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "attendance:read_all": {RoleEnum.ADMIN, RoleEnum.HR},
+    "attendance:correct": {RoleEnum.ADMIN, RoleEnum.HR},
+
+    "leave:apply": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "leave:approve": {RoleEnum.ADMIN, RoleEnum.HR},
+    "leave:policy_write": {RoleEnum.ADMIN},
+
+    "user:manage": {RoleEnum.ADMIN},
+    "audit:read": {RoleEnum.ADMIN},
+
+    # used only for today's RBAC test route
+    "demo:hr_only": {RoleEnum.ADMIN, RoleEnum.HR},
+}
+
+
+def has_permission(role: RoleEnum, permission: str) -> bool:
+    allowed_roles = PERMISSIONS.get(permission)
+    if allowed_roles is None:
+        return False  # fail closed: unknown permission string = deny, never allow
+    return role in allowed_roles

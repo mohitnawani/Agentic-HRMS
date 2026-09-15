@@ -1,0 +1,382 @@
+================================================================================
+AGENTIC HRMS — INDUSTRY-LEVEL BUILD PLAN (7 hrs/day, 25 working days ≈ 175 hrs)
+Role-Based AI-Powered HR Management System with Agentic AI + RAG + CI/CD
+================================================================================
+
+HOW TO USE THIS FILE (read this first — for the AI coding agent AND for Mohit)
+--------------------------------------------------------------------------------
+- Work ONE DAY at a time, top to bottom. Each day has GOAL, TASKS, DELIVERABLE,
+  DONE-WHEN. A day is only done when DONE-WHEN passes AND the app still runs
+  end-to-end — never move on with a half-broken state committed to main.
+- 25 working days ≈ 4 weeks at 6 days/week, or ~3.5 weeks at 7 days/week.
+  Pick a sustainable pace over hitting an exact week count.
+- Git discipline: one feature branch per day, PR into main, merge only when
+  CI passes (CI is set up on Day 7 — until then, just keep main always
+  runnable). This IS how real teams work, so treat it as practice, not
+  ceremony.
+- Trade-offs made to fit this timeline (own these in interviews — they show
+  judgment, not corner-cutting):
+    - No Celery/background jobs — leave accrual etc. handled synchronously.
+    - Test coverage is built into each day for the highest-risk logic (auth,
+      RBAC, agent tool permission checks) rather than a single dedicated
+      100%-coverage day.
+    - Frontend polish is one focused pass (Day 13), not spread across every
+      module.
+    - IaC (Terraform) and deep observability are OUT of scope for v1 — noted
+      as "v2" ideas at the end of this file.
+  If you finish early, spend extra time in this order: test coverage > RAG
+  tuning > frontend polish > IaC/observability.
+
+================================================================================
+TECH STACK
+================================================================================
+BACKEND
+  - Python 3.11+, FastAPI, Uvicorn
+  - PostgreSQL 15+ (Docker) + pgvector extension (doubles as your vector DB —
+    no separate Chroma/Pinecone instance to run)
+  - SQLAlchemy 2.0 (async), Alembic migrations, Pydantic v2
+  - Auth: JWT (python-jose) + passlib[bcrypt]
+  - RBAC: custom permission-matrix + FastAPI dependency (not a 3rd-party lib —
+    you want to be able to explain every line of this in an interview)
+  - Agentic AI: LangGraph (supervisor pattern) + LangChain tool-calling
+  - LLM: OpenAI gpt-4o-mini, behind a provider interface (swappable later)
+  - Testing: pytest + httpx (async test client)
+  - Linting/formatting: ruff + black
+  - Containerization: multi-stage Dockerfile (dev + slim prod stage) +
+    docker-compose (api, postgres, redis if kept)
+
+FRONTEND
+  - React 18 + Vite, TypeScript
+  - TailwindCSS + shadcn/ui (Radix-based)
+  - React Router v6
+  - TanStack Query + Axios
+  - Redux(client/auth state)
+  - React Hook Form + Zod
+  - Recharts
+  - Linting/formatting: eslint + prettier
+
+DEVOPS / CI-CD (new in this version — this is what makes the project read as
+"industry-level" rather than "solo tutorial project")
+  - GitHub Actions: CI pipeline (lint + test + build) on every push/PR to
+    both backend and frontend, required to pass before merging to main
+  - Pre-commit hooks: ruff/black (backend), eslint/prettier (frontend) — catch
+    style issues before they even reach CI
+  - Multi-stage Docker builds: separate dev vs. slim production images
+  - Environment separation: dev/staging/prod config via pydantic-settings,
+    secrets via GitHub Actions secrets (never committed), `.env.example`
+    committed instead of real `.env`
+  - CD: GitHub Actions auto-deploys backend on merge to main (Render/
+    Railway/Fly.io); frontend auto-deploys via Vercel's native git
+    integration; Alembic migrations run as an explicit pipeline step before
+    the new backend version goes live
+  - Basic observability: structured JSON logging, a real health-check
+    endpoint the hosting platform pings, and a rollback note in the README
+    (how to redeploy the previous image if a deploy breaks something)
+
+REPO LAYOUT (create on Day 1, DevOps folders added Day 7)
+  agentic-hrms/
+    .github/workflows/         (ci.yml, cd.yml — added Day 7 / Day 25)
+    .pre-commit-config.yaml    (added Day 7)
+    backend/
+      app/{core,models,schemas,api/v1,services,agent,rag,audit,db}/
+      alembic/
+      tests/
+      Dockerfile               (multi-stage)
+    frontend/
+      src/{components/ui,components,features,layouts,lib,store,routes}/
+    docker-compose.yml
+    docker-compose.prod.yml    (added Day 7)
+    .env.example
+    README.md
+    SECURITY.md
+
+================================================================================
+WEEK 1 — BACKEND CORE + CI/CD FOUNDATIONS  (Days 1-7)
+================================================================================
+DAY 1 — Setup + data model + seed
+TASKS:
+  - Repo/folder structure, docker-compose (postgres + redis), FastAPI
+    skeleton with health check, Vite+React+Tailwind+shadcn frontend shell.
+  - SQLAlchemy models: User, Role, Department, Designation, Employee,
+    TimestampMixin. Alembic migration. Seed script (1 admin, 2 depts,
+    3 designations).
+DONE-WHEN:
+  [ ] docker-compose up -d works clean; alembic upgrade head runs clean
+  [ ] health check returns 200; frontend shell renders
+
+DAY 2 — Auth + RBAC
+TASKS:
+  - POST /auth/login (JWT access+refresh), password hashing,
+    get_current_user dependency, POST /auth/refresh.
+  - Permission matrix as code (Admin/HR/Employee x operation).
+    require_permission() dependency built on top of it.
+DONE-WHEN:
+  [ ] Login works, protected routes reject bad/missing tokens
+  [ ] Employee gets 403 / HR gets 200 on a dummy role-gated route
+
+DAY 3 — Employee + Department/Designation modules
+TASKS:
+  - Full employee CRUD, role-scoped (Employee sees only self; HR/Admin see
+    all, filterable by department).
+  - Department/Designation CRUD (Admin-only writes, everyone reads).
+  - pytest for auth + RBAC + employee CRUD.
+DONE-WHEN:
+  [ ] Full CRUD demoable via /docs for both modules, role scoping verified
+  [ ] pytest green for auth/RBAC/employee
+
+DAY 4 — Attendance
+TASKS:
+  - Check-in/check-out (block duplicate per day), personal history, HR/Admin
+    view by employee/date range, monthly summary, HR/Admin-only correction
+    endpoint (store before/after values for later audit wiring).
+DONE-WHEN:
+  [ ] Full attendance flow works; correction blocked for Employee role
+
+DAY 5 — Leave management (full lifecycle)
+TASKS:
+  - LeaveType/LeavePolicy (Admin CRUD), LeaveBalance (auto-init on employee
+    creation), LeaveRequest workflow (apply/approve/reject/cancel), balance
+    decrements on approval.
+DONE-WHEN:
+  [ ] Full leave lifecycle works end-to-end against seed data
+
+DAY 6 — Remaining backend modules (priority order — cut from bottom if tight)
+TASKS:
+  1. Policy document storage (upload/list/get — metadata layer for RAG)
+  2. Dashboard/analytics endpoints per role
+  3. Holidays + Announcements CRUD
+  4. Admin user/permission management (create HR/Employee accounts,
+     activate/deactivate)
+DONE-WHEN:
+  [ ] Items 1-2 fully working (non-negotiable — frontend and RAG depend on
+      them). Items 3-4 done if time allows; otherwise carry into Week 2 slack.
+
+DAY 7 — CI/CD & DevOps foundations
+TASKS:
+  - GitHub Actions CI workflow (.github/workflows/ci.yml): on push/PR, run
+    backend lint (ruff) + format check (black --check) + pytest, and
+    frontend lint (eslint) + build. Mark as a required check on main via
+    branch protection.
+  - Pre-commit hooks (.pre-commit-config.yaml) mirroring the CI checks, so
+    issues are caught locally before push.
+  - Convert backend Dockerfile to multi-stage (builder stage + slim runtime
+    stage).
+  - Environment separation: pydantic-settings config classes for
+    dev/staging/prod, `.env.example` committed, real `.env` gitignored.
+    docker-compose.prod.yml for a production-shaped local test.
+  - Structured JSON logging setup (so it's ready before you have much to log).
+DONE-WHEN:
+  [ ] Opening a PR triggers CI automatically and shows pass/fail
+  [ ] main is protected — cannot merge with failing CI
+  [ ] `docker build` succeeds using the multi-stage Dockerfile and produces
+      a noticeably smaller image than the dev one
+  [ ] pre-commit run --all-files passes clean
+
+** MILESTONE: backend feature-complete AND wrapped in a real CI pipeline —
+   this is the point where the project stops looking like a tutorial repo. **
+
+================================================================================
+WEEK 2 — FRONTEND: FOUNDATIONS + ALL CORE MODULES  (Days 8-13)
+================================================================================
+DAY 8 — App shell, auth, layout, design system
+TASKS:
+  - React Router + role-based route guards, login page (shadcn+RHF+Zod),
+    Axios instance with JWT interceptor + auto-refresh, Redux auth store.
+  - Shared AppLayout (sidebar/topbar) with per-role nav.
+  - Reusable DataTable, PageHeader, loading skeleton, empty-state components.
+DONE-WHEN:
+  [ ] Login works against real backend; role-gated nav renders correctly
+  [ ] DataTable/PageHeader components exist and are used on at least one page
+
+DAY 9 — API layer + all 3 dashboards
+TASKS:
+  - Typed API client + TanStack Query hooks per module.
+  - Employee, HR, and Admin dashboards (summaries, headcount, pending
+    approvals, org metrics, Recharts charts).
+DONE-WHEN:
+  [ ] All three dashboards render live data for their respective roles
+
+DAY 10 — Employee Management + Department/Designation UI
+TASKS:
+  - Employee list/search/filter, detail page, create/edit form, delete with
+    confirm dialog, role-gated actions.
+  - Admin CRUD screens for departments/designations.
+DONE-WHEN:
+  [ ] Full CRUD usable from UI for both modules, correctly role-gated
+
+DAY 11 — Attendance + Leave UI
+TASKS:
+  - Check-in/out button + status, personal history, HR correction view.
+  - Apply-for-leave form, balance view, history with status badges, HR
+    approval queue.
+DONE-WHEN:
+  [ ] Both full flows usable end-to-end from UI
+
+DAY 12 — Policies + Admin user management UI + catch-up
+TASKS:
+  - Policy doc library page, holidays/announcements UI, admin user
+    management screens.
+  - Finish any backend items from Day 6 that slipped, plus their UI.
+DONE-WHEN:
+  [ ] All remaining HRMS modules have working UI for their intended roles
+
+DAY 13 — Frontend polish pass
+TASKS:
+  - Responsive check, error/empty/loading state audit across every page,
+    fix console errors, dark-mode pass if time allows.
+DONE-WHEN:
+  [ ] Click through all 3 roles' full flows with zero console errors
+
+** MILESTONE: full traditional HRMS complete end-to-end, behind a working CI
+   pipeline. Good point for a checkpoint demo video. **
+
+================================================================================
+WEEK 3 — RAG PIPELINE + AGENTIC AI ORCHESTRATION  (Days 14-20)
+================================================================================
+DAY 14 — RAG ingestion pipeline
+TASKS:
+  - Enable pgvector, DocumentChunk model, ingestion service (extract text,
+    chunk with overlap, embed via OpenAI embeddings, store vectors). Trigger
+    automatically on policy doc upload.
+DONE-WHEN:
+  [ ] Uploading a policy PDF produces chunks + embeddings in the DB
+
+DAY 15 — Retrieval + grounded generation
+TASKS:
+  - similarity_search(query, top_k) via pgvector. LLM wrapper whose system
+    prompt forces answers ONLY from retrieved context, cites the source doc,
+    and says "I don't know" when context is insufficient.
+DONE-WHEN:
+  [ ] /rag/ask gives a grounded, cited answer for an in-corpus question, and
+      correctly says "I don't know" for an out-of-corpus one
+
+DAY 16 — RAG eval + agent architecture setup
+TASKS:
+  - Morning: 10-question eval set from your uploaded docs, tune chunk
+    size/top_k until 8+/10 correct.
+  - Afternoon: LangGraph skeleton — Supervisor routing to RAG Agent /
+    Database Agent / Action Agent / Response Generator, shared state design
+    (user_id, role, history, intent, tool results).
+DONE-WHEN:
+  [ ] RAG eval passes 8+/10; graph compiles and routes correctly to stubs
+
+DAY 17 — Database Agent + RAG Agent wired in
+TASKS:
+  - Read-only tools (get_leave_balance, get_attendance_summary,
+    list_employees, get_employee_details) that ALWAYS take user/role from
+    graph state, never from LLM free text.
+  - Wrap Day 15's RAG pipeline as a graph node/tool.
+DONE-WHEN:
+  [ ] "How many leaves do I have left?" and "What's the WFH policy?" both
+      route correctly and return scoped/grounded answers
+
+DAY 18 — Action Agent (CRUD tools) + permission enforcement
+TASKS:
+  - Tools: create/update/delete_employee, approve/reject_leave,
+    create_department, etc. — every tool calls the SAME require_permission
+    logic from Day 2.
+DONE-WHEN:
+  [ ] Employee asking to delete an employee is rejected server-side with no
+      DB write; HR/Admin equivalents succeed
+
+DAY 19 — Slot-filling + sensitive action confirmation + memory
+TASKS:
+  - Missing-field follow-up loop for CREATE/UPDATE requests.
+  - Confirmation step for destructive/bulk actions.
+  - Short-term conversation memory, strictly scoped per authenticated user.
+DONE-WHEN:
+  [ ] "Add employee Priya Singh" (missing fields) asks a follow-up and
+      completes correctly after the answer
+  [ ] "Delete all test employee records" requires confirmation before acting
+  [ ] Two different users never see each other's conversation context
+
+DAY 20 — Full agent scenario testing
+TASKS:
+  - Run all 4 example scenarios from the project doc (policy question, leave
+    query, HR creates employee, unauthorized delete) exactly as written.
+    Fix routing/misclassification bugs. Small intent eval set (10-15 prompts).
+DONE-WHEN:
+  [ ] All 4 doc scenarios produce the documented outcome via API calls
+  [ ] Intent eval passes 8+/10
+
+================================================================================
+WEEK 4 — CHAT UI, AUDIT/SECURITY, CD + DEPLOYMENT  (Days 21-25)
+================================================================================
+DAY 21 — Chat endpoint + Chat UI
+TASKS:
+  - POST /agent/chat with streaming (SSE/websocket) using authenticated
+    context. Chat panel UI, accessible from every role's layout, tool
+    results rendered as small cards not raw text.
+DONE-WHEN:
+  [ ] Can chat with the assistant from the UI as any role, streaming works
+
+DAY 22 — Follow-up/confirmation UX + full scenario retest through UI
+TASKS:
+  - Multi-turn follow-up and confirmation flows feel natural in the chat UI.
+    Re-run all 4 doc scenarios through the actual UI.
+DONE-WHEN:
+  [ ] All 4 scenarios demoable live, start to finish, from the chat UI
+
+DAY 23 — Audit logging
+TASKS:
+  - AuditLog model (user, role, action, tool/service, entity, before/after,
+    status, timestamp). Log every mutating API call AND every agent tool
+    execution. Admin UI page to browse/filter logs.
+DONE-WHEN:
+  [ ] Every mutation (via UI or chat) produces a correct audit log entry
+
+DAY 24 — Security hardening + test coverage top-up
+TASKS:
+  - Checklist: every tool re-checks permissions server-side, rate limiting on
+    auth/agent endpoints, upload validation, secrets not committed, CORS
+    locked down. Backfill pytest for agent tools + RAG retrieval.
+DONE-WHEN:
+  [ ] Security checklist fully checked off in SECURITY.md
+  [ ] pytest covers auth, RBAC, agent tool permission checks, RAG retrieval
+
+DAY 25 — CD pipeline + deployment + documentation
+TASKS:
+  - GitHub Actions CD workflow (.github/workflows/cd.yml): on merge to main,
+    build + push the production Docker image, run Alembic migrations as an
+    explicit step, then deploy backend to Render/Railway/Fly.io. Frontend
+    deploys via Vercel's native git integration (no custom workflow needed).
+  - Managed Postgres with pgvector enabled; env vars + CORS updated for prod.
+  - README: architecture diagram, setup steps, feature list, screenshots, a
+    short write-up of the agent design + RBAC model + CI/CD setup (interview
+    talking points — write while fresh). Record a 3-5 min demo video.
+DONE-WHEN:
+  [ ] Merging to main auto-deploys without manual steps
+  [ ] Live URL works end-to-end: login, dashboards, CRUD, chat, RAG
+  [ ] README documents how to roll back a bad deploy
+  [ ] README is resume/LinkedIn-ready; demo video recorded
+
+================================================================================
+SUMMARY
+================================================================================
+25 working days x 7 hrs ≈ 175 hours.
+  Week 1 (Days 1-7):   Backend core + CI pipeline
+  Week 2 (Days 8-13):  Frontend — foundations + every module's UI
+  Week 3 (Days 14-20): RAG pipeline + full agentic AI orchestration
+  Week 4 (Days 21-25): Chat UI integration, audit, security, CD + deploy
+
+Checkpoints: Day 7 (backend + CI live), Day 13 (full HRMS demoable via UI),
+Day 20 (agent verified via API), Day 25 (live, auto-deploying, documented).
+
+WHAT MAKES THIS "INDUSTRY-LEVEL" VS. A TYPICAL PORTFOLIO PROJECT:
+  - Real RBAC enforced server-side at the tool layer, not just hidden UI buttons
+  - Agent tools never trust the LLM for identity/permissions — always pulled
+    from authenticated session state
+  - CI required to pass before merge (not just "it works on my machine")
+  - Multi-stage Docker builds, environment separation, secrets management
+  - Automatic CD with a documented rollback path
+  - Audit logging covering both human and AI-driven actions
+  - Grounded RAG with explicit "I don't know" handling instead of hallucinating
+
+v2 IDEAS (out of scope for this build, good "what I'd do next" interview
+answers):
+  - Terraform/IaC for the Postgres + hosting resources
+  - Centralized observability (e.g. shipping logs/metrics to a real
+    dashboard instead of relying on the hosting platform's console)
+  - Celery + Redis for async jobs (leave accrual, reminder emails)
+  - Blue-green or canary deploys instead of a single-shot CD step
+================================================================================

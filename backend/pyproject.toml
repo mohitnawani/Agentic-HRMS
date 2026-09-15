@@ -1,0 +1,22 @@
+[project]
+name = "agentic-hrms-backend"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy>=2.0",
+    "asyncpg",
+    "alembic",
+    "pydantic-settings",
+    "python-jose[cryptography]",
+    "bcrypt",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "httpx", "ruff", "black"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

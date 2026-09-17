@@ -4,6 +4,9 @@ from app.models.employee import Employee
 from app.models.role import RoleEnum
 from app.models.user import User
 from app.models.attendance import Attendance, AttendanceStatus
+from app.models.policy_document import PolicyDocument
+from app.models.holiday import Holiday
+from app.models.announcement import Announcement
 from app.models.leave import (
     LeaveBalance,
     LeaveRequest,
@@ -23,4 +26,7 @@ __all__ = [
     "LeaveRequest",
     "LeaveRequestStatus",
     "LeaveType",
+    "PolicyDocument",
+    "Holiday",
+    "Announcement",
 ]

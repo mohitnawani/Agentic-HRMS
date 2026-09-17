@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from datetime import date
 
@@ -9,6 +8,7 @@ from httpx import AsyncClient, ASGITransport
 from app.core.security import hash_password
 from app.db.session import async_session
 from app.main import app
+from app.models.employee import Employee
 from app.models.role import RoleEnum
 from app.models.user import User
 
@@ -47,6 +47,15 @@ async def employee_token(client):
             role=RoleEnum.EMPLOYEE,
         )
         session.add(user)
+        await session.flush()
+        session.add(
+            Employee(
+                user_id=user.id,
+                first_name="Test",
+                last_name="Employee",
+                date_of_joining=date.today(),
+            )
+        )
         await session.commit()
         email = user.email
 

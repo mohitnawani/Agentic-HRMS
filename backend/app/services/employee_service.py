@@ -9,6 +9,7 @@ from app.models.employee import Employee
 from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
+from app.services import leave_service
 
 
 async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
@@ -37,6 +38,7 @@ async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
     db.add(employee)
     await db.commit()
     await db.refresh(employee)
+    await leave_service.initialize_balances_for_employee(db, employee.id)
     return employee
 
 

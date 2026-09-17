@@ -20,6 +20,8 @@ PERMISSIONS: dict[str, set[RoleEnum]] = {
     "leave:apply": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
     "leave:approve": {RoleEnum.ADMIN, RoleEnum.HR},
     "leave:policy_write": {RoleEnum.ADMIN},
+    "leave:read_all": {RoleEnum.ADMIN, RoleEnum.HR},
+    "leave:type_write": {RoleEnum.ADMIN},
 
     "user:manage": {RoleEnum.ADMIN},
     "audit:read": {RoleEnum.ADMIN},

@@ -3,6 +3,9 @@ import LoginPage from "@/features/auth/LoginPage";
 import ProtectedRoute from "./ProtectedRoute";
 import AppLayout from "@/layouts/AppLayout";
 import PlaceholderPage from "@/pages/PlaceholderPage";
+import EmployeeDashboard from "@/features/dashboard/EmployeeDashboard";
+import HRDashboard from "@/features/dashboard/HRDashboard";
+import AdminDashboard from "@/features/dashboard/AdminDashboard";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage/> },
@@ -12,7 +15,7 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: "/employee/dashboard", element: <PlaceholderPage title="Employee Dashboard" /> },
+          { path: "/employee/dashboard", element: <EmployeeDashboard /> },
           { path: "/employee/profile", element: <PlaceholderPage title="My Profile" /> },
           { path: "/employee/attendance", element: <PlaceholderPage title="Attendance" /> },
           { path: "/employee/leave", element: <PlaceholderPage title="Leave" /> },
@@ -28,7 +31,7 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: "/hr/dashboard", element: <PlaceholderPage title="HR Dashboard" /> },
+          { path: "/hr/dashboard", element: <HRDashboard /> },
           { path: "/hr/employees", element: <PlaceholderPage title="Employees" /> },
           { path: "/hr/attendance", element: <PlaceholderPage title="Attendance" /> },
           { path: "/hr/leave", element: <PlaceholderPage title="Leave Approvals" /> },
@@ -44,7 +47,7 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: "/admin/dashboard", element: <PlaceholderPage title="Admin Dashboard" /> },
+          { path: "/admin/dashboard", element: <AdminDashboard /> },
           { path: "/admin/employees", element: <PlaceholderPage title="Employees" /> },
           { path: "/admin/departments", element: <PlaceholderPage title="Departments" /> },
           { path: "/admin/users", element: <PlaceholderPage title="Users" /> },

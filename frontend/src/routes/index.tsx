@@ -11,6 +11,10 @@ import EmployeeForm from "@/features/employees/EmployeeForm";
 import EmployeeDetailPage from "@/features/employees/EmployeeDetailPage";
 import DepartmentPage from "@/features/departments/DepartmentPage";
 import DesignationPage from "@/features/designations/DesignationPage";
+import AttendanceHistoryPage from "@/features/attendance/AttendanceHistoryPage";
+import AttendanceCorrectionPage from "@/features/attendance/AttendanceCorrectionPage";
+import LeavePage from "@/features/leave/LeavePage";
+import LeaveApprovalsPage from "@/features/leave/LeaveApprovalsPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage/> },
@@ -22,8 +26,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/employee/dashboard", element: <EmployeeDashboard /> },
           { path: "/employee/profile", element: <PlaceholderPage title="My Profile" /> },
-          { path: "/employee/attendance", element: <PlaceholderPage title="Attendance" /> },
-          { path: "/employee/leave", element: <PlaceholderPage title="Leave" /> },
+          { path: "/employee/attendance", element: <AttendanceHistoryPage /> },
+          { path: "/employee/leave", element: <LeavePage /> },
           { path: "/employee/policies", element: <PlaceholderPage title="Policies" /> },
           { path: "/employee/assistant", element: <PlaceholderPage title="Assistant" /> },
         ],
@@ -40,8 +44,8 @@ export const router = createBrowserRouter([
           { path: "/hr/employees", element: <EmployeeListPage /> },
           { path: "/hr/employees/new", element: <EmployeeForm /> },
           { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
-          { path: "/hr/attendance", element: <PlaceholderPage title="Attendance" /> },
-          { path: "/hr/leave", element: <PlaceholderPage title="Leave Approvals" /> },
+          { path: "/hr/attendance", element: <AttendanceCorrectionPage /> },
+          { path: "/hr/leave", element: <LeaveApprovalsPage /> },
           { path: "/hr/policies", element: <PlaceholderPage title="Policies" /> },
           { path: "/hr/assistant", element: <PlaceholderPage title="Assistant" /> },
         ],

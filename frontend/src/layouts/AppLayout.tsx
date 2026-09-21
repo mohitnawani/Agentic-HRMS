@@ -25,6 +25,7 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "Dashboard", path: "/admin/dashboard" },
     { label: "Employees", path: "/admin/employees" },
     { label: "Departments", path: "/admin/departments" },
+    { label: "Designations", path: "/admin/designations" },
     { label: "Users", path: "/admin/users" },
     { label: "Assistant", path: "/admin/assistant" },
   ],

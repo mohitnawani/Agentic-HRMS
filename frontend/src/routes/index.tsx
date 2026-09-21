@@ -6,6 +6,11 @@ import PlaceholderPage from "@/pages/PlaceholderPage";
 import EmployeeDashboard from "@/features/dashboard/EmployeeDashboard";
 import HRDashboard from "@/features/dashboard/HRDashboard";
 import AdminDashboard from "@/features/dashboard/AdminDashboard";
+import EmployeeListPage from "@/features/employees/EmployeeListPage";
+import EmployeeForm from "@/features/employees/EmployeeForm";
+import EmployeeDetailPage from "@/features/employees/EmployeeDetailPage";
+import DepartmentPage from "@/features/departments/DepartmentPage";
+import DesignationPage from "@/features/designations/DesignationPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage/> },
@@ -32,7 +37,9 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: "/hr/dashboard", element: <HRDashboard /> },
-          { path: "/hr/employees", element: <PlaceholderPage title="Employees" /> },
+          { path: "/hr/employees", element: <EmployeeListPage /> },
+          { path: "/hr/employees/new", element: <EmployeeForm /> },
+          { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
           { path: "/hr/attendance", element: <PlaceholderPage title="Attendance" /> },
           { path: "/hr/leave", element: <PlaceholderPage title="Leave Approvals" /> },
           { path: "/hr/policies", element: <PlaceholderPage title="Policies" /> },
@@ -48,8 +55,11 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: "/admin/dashboard", element: <AdminDashboard /> },
-          { path: "/admin/employees", element: <PlaceholderPage title="Employees" /> },
-          { path: "/admin/departments", element: <PlaceholderPage title="Departments" /> },
+          { path: "/admin/employees", element: <EmployeeListPage /> },
+          { path: "/admin/employees/new", element: <EmployeeForm /> },
+          { path: "/admin/employees/:id", element: <EmployeeDetailPage /> },
+          { path: "/admin/departments", element: <DepartmentPage /> },
+          { path: "/admin/designations", element: <DesignationPage /> },
           { path: "/admin/users", element: <PlaceholderPage title="Users" /> },
           { path: "/admin/assistant", element: <PlaceholderPage title="Assistant" /> },
         ],

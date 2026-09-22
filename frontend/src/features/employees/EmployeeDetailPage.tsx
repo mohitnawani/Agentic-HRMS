@@ -69,7 +69,9 @@ export default function EmployeeDetailPage() {
 
   const { register, handleSubmit, control, reset, trigger } = useForm<EditValues>();
 
-  const canEdit = role === "admin" || role === "hr";
+  // Admin edits anyone; HR edits HR/employee profiles but never admin profiles.
+  const canEdit =
+    role === "admin" || (role === "hr" && employee?.role !== "admin");
 
   if (isLoading) return <LoadingSkeleton rows={4} />;
   if (isError || !employee) return <p className="text-destructive">Employee not found.</p>;

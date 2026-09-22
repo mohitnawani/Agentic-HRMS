@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeUpdate
 from app.services import employee_service
@@ -44,7 +45,13 @@ def _to_read_schema(employee, user: User) -> EmployeeRead:
 
 
 @router.post("", response_model=EmployeeRead, dependencies=[Depends(require_permission("employee:create"))])
-async def create_employee(data: EmployeeCreate, db: AsyncSession = Depends(get_db)):
+async def create_employee(
+    data: EmployeeCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if data.role == RoleEnum.ADMIN and current_user.role != RoleEnum.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create admin accounts")
     employee = await employee_service.create_employee(db, data)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
     return _to_read_schema(employee, user_result.scalar_one())
@@ -74,8 +81,15 @@ async def get_employee(employee_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 
 @router.patch("/{employee_id}", response_model=EmployeeRead, dependencies=[Depends(require_permission("employee:update"))])
-async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, db: AsyncSession = Depends(get_db)):
-    employee = await employee_service.update_employee(db, employee_id, data)
+async def update_employee(
+    employee_id: uuid.UUID,
+    data: EmployeeUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    employee = await employee_service.update_employee(db, employee_id, data, current_user)
+    user_result = await db.execute(select(User).where(User.id == employee.user_id))
+    return _to_read_schema(employee, user_result.scalar_one())
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
     return _to_read_schema(employee, user_result.scalar_one())
 

@@ -129,3 +129,28 @@ async def test_hr_delete_rules(client, admin_token, employee_token):
     victim2 = await _employee_profile_id(client, admin_token, prefix="victim2")
     assert (await client.delete(f"/api/v1/employees/{victim2}", headers=h_emp)).status_code == 403
     assert (await client.delete(f"/api/v1/employees/{victim2}", headers=h_admin)).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_hr_edit_rules(client, admin_token):
+    h_admin = {"Authorization": f"Bearer {admin_token}"}
+    h_hr, _ = await _hr_headers(client, admin_token)
+
+    victim = await _employee_profile_id(client, admin_token, prefix="editemp")
+    assert (await client.patch(
+        f"/api/v1/employees/{victim}", json={"phone": "9999999999"}, headers=h_hr
+    )).status_code == 200
+
+    # HR cannot edit an admin-role profile
+    adm_email = f"admupd_{uuid.uuid4().hex[:6]}@example.com"
+    await client.post("/api/v1/users", json={
+        "email": adm_email, "password": "testpass123",
+        "role": "admin", "first_name": "Adm", "last_name": "Upd",
+    }, headers=h_admin)
+    adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
+    assert (await client.patch(
+        f"/api/v1/employees/{adm_profile}", json={"phone": "111"}, headers=h_hr
+    )).status_code == 403
+    assert (await client.patch(
+        f"/api/v1/employees/{adm_profile}", json={"phone": "111"}, headers=h_admin
+    )).status_code == 200

@@ -11,7 +11,7 @@ const TABS = ["Work Profile", "Personal Info", "Banking", "Documents"] as const;
 function FieldRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-0">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-md border text-red-600">
         {icon}
       </span>
       <span className="min-w-0">
@@ -41,11 +41,11 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
           />
         ) : (
             <div
-              className="flex size-20 items-center justify-center rounded-full border bg-muted"
+              className="flex size-20 items-center justify-center rounded-full border border-sky-200 bg-sky-100"
               role="img"
               aria-label="No photo uploaded"
             >
-              <User size={32} className="text-muted-foreground" />
+              <User size={32} className="text-sky-700" />
             </div>
         )}
 
@@ -96,7 +96,7 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
               className={
                 t === tab
                   ? "rounded-t-md border border-b-0 px-4 py-2 text-sm font-medium bg-background -mb-px"
-                  : "px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+                  : "px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-blue-50"
               }
             >
               {t}
@@ -106,7 +106,7 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
 
         <div className="py-4 text-sm">
           {tab === "Work Profile" && (
-            <div className="max-w-md space-y-2">
+            <div className="max-w-md space-y-2 bg">
               <p><span className="text-muted-foreground">Department:</span> {deptName}</p>
               <p><span className="text-muted-foreground">Designation:</span> {desigTitle}</p>
               <p><span className="text-muted-foreground">Date of joining:</span> {employee.date_of_joining}</p>

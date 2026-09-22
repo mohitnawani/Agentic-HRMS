@@ -23,7 +23,7 @@ async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
         id=uuid.uuid4(),
         email=data.email,
         hashed_password=hash_password(data.password),
-        role=RoleEnum.EMPLOYEE,
+        role=data.role,
     )
     db.add(user)
     await db.flush()  # get user.id before creating employee
@@ -83,8 +83,15 @@ async def get_employee_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> Emplo
     return employee
 
 
-async def update_employee(db: AsyncSession, employee_id: uuid.UUID, data: EmployeeUpdate) -> Employee:
+async def update_employee(
+    db: AsyncSession, employee_id: uuid.UUID, data: EmployeeUpdate, actor: User
+) -> Employee:
     employee = await get_employee(db, employee_id)
+    if actor.role == RoleEnum.HR:
+        user_result = await db.execute(select(User).where(User.id == employee.user_id))
+        target = user_result.scalar_one_or_none()
+        if target is None or target.role == RoleEnum.ADMIN:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR cannot edit admin accounts")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(employee, field, value)
     await db.commit()

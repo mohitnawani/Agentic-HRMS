@@ -37,6 +37,7 @@ const schema = z.object({
   ifsc_code: z.string().optional(),
   id_proof_type: z.string().optional(),
   id_proof_number: z.string().optional(),
+  role: z.enum(["admin", "hr", "employee"]).optional(),
   photo: z.any().optional(),
 });
 
@@ -166,6 +167,23 @@ export default function EmployeeForm() {
                     <Label>Employee Code (optional — auto if blank)</Label>
                     <Input {...register("employee_code")} placeholder="EMP-0007" />
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <Label>Role</Label>
+                  <Controller
+                    control={control}
+                    name="role"
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger><SelectValue placeholder="Employee" /></SelectTrigger>
+                        <SelectContent>
+                          {(role === "admin" ? ["admin", "hr", "employee"] : ["hr", "employee"]).map((r) => (
+                            <SelectItem key={r} value={r}>{r === "hr" ? "HR" : r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 </div>
               </>
             )}

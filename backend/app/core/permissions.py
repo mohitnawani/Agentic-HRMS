@@ -31,6 +31,7 @@ PERMISSIONS: dict[str, set[RoleEnum]] = {
     "leave:type_write": {RoleEnum.ADMIN},
 
     "user:manage": {RoleEnum.ADMIN},
+    "user:create": {RoleEnum.ADMIN, RoleEnum.HR},
     "audit:read": {RoleEnum.ADMIN},
 
     # used only for today's RBAC test route

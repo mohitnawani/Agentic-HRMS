@@ -35,6 +35,7 @@ export interface EmployeeCreatePayload {
   date_of_joining: string;
   department_id?: string;
   designation_id?: string;
+  role?: string;
   employee_code?: string;
   date_of_birth?: string;
   gender?: string;

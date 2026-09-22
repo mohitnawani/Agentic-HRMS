@@ -12,6 +12,7 @@ import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import { useUsers, useCreateUser, useActivateUser, useDeactivateUser } from "./useUsers";
+import { useAppSelector } from "@/store/hooks";
 import type { ManagedRole, ManagedUser } from "./userApi";
 
 const ROLE_VARIANT: Record<ManagedRole, "default" | "secondary" | "outline"> = {
@@ -36,6 +37,7 @@ export default function UsersPage() {
   const activateUser = useActivateUser();
   const deactivateUser = useDeactivateUser();
   const [open, setOpen] = useState(false);
+  const myEmail = useAppSelector((s) => s.auth.email);
 
   const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
@@ -126,7 +128,13 @@ export default function UsersPage() {
             {
               header: "Actions",
               render: (u) => u.is_active ? (
-                <Button size="sm" variant="outline" onClick={() => deactivateUser.mutate(u.id)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={u.email === myEmail}
+                  title={u.email === myEmail ? "You cannot deactivate your own account" : undefined}
+                  onClick={() => deactivateUser.mutate(u.id)}
+                >
                   Deactivate
                 </Button>
               ) : (

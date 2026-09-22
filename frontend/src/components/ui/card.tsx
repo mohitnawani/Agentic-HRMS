@@ -1,11 +1,27 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+
+
+const toneClass: Record<string, string> = {
+  amber: "bg-amber-50 border-amber-200",
+  violet: "bg-violet-50 border-violet-200",
+  teal: "bg-teal-50 border-teal-200",
+};
+
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  tone?: "amber" | "violet" | "teal";
+}
+
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, tone, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-lg border bg-card text-card-foreground shadow-sm", className)}
+      className={cn(
+        "rounded-lg border bg-card text-card-foreground shadow-sm",
+        tone && toneClass[tone],
+        className
+      )}
       {...props}
     />
   )

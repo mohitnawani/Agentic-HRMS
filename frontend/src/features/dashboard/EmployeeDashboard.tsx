@@ -24,15 +24,15 @@ export default function EmployeeDashboard() {
       <PageHeader title="My Dashboard" description="Your attendance, leave balance, and requests" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card>
+        <Card tone="amber">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">This Month — Present</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.attendance_this_month.present}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="violet">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Pending Leave Requests</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.pending_leave_requests}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="teal">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Leave Types</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.leave_balances.length}</p></CardContent>
         </Card>

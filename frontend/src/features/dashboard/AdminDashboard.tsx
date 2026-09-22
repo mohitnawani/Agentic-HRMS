@@ -17,15 +17,15 @@ export default function AdminDashboard() {
       <PageHeader title="Admin Dashboard" description="Organization-wide metrics" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card>
+        <Card tone="amber">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Employees</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_employees}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="violet">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Departments</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_departments}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="teal">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Active Users</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.active_users}</p></CardContent>
         </Card>

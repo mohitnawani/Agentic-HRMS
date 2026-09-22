@@ -17,15 +17,15 @@ export default function HRDashboard() {
       <PageHeader title="HR Dashboard" description="Org-wide headcount, attendance, and pending approvals" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card>
+        <Card tone="amber">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Employees</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_employees}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="violet">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">On Leave Today</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.on_leave_today}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="teal">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Pending Approvals</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.pending_approvals}</p></CardContent>
         </Card>

@@ -13,6 +13,17 @@ class EmployeeCreate(BaseModel):
     date_of_joining: date
     department_id: uuid.UUID | None = None
     designation_id: uuid.UUID | None = None
+    employee_code: str | None = None
+    date_of_birth: date | None = None
+    gender: str | None = None
+    address: str | None = None
+    city: str | None = None
+    emergency_contact: str | None = None
+    bank_name: str | None = None
+    account_number: str | None = None
+    ifsc_code: str | None = None
+    id_proof_type: str | None = None
+    id_proof_number: str | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -22,6 +33,17 @@ class EmployeeUpdate(BaseModel):
     date_of_joining: date | None = None
     department_id: uuid.UUID | None = None
     designation_id: uuid.UUID | None = None
+    employee_code: str | None = None
+    date_of_birth: date | None = None
+    gender: str | None = None
+    address: str | None = None
+    city: str | None = None
+    emergency_contact: str | None = None
+    bank_name: str | None = None
+    account_number: str | None = None
+    ifsc_code: str | None = None
+    id_proof_type: str | None = None
+    id_proof_number: str | None = None
 
 
 class EmployeeRead(BaseModel):
@@ -37,6 +59,17 @@ class EmployeeRead(BaseModel):
     designation_id: uuid.UUID | None
     photo_url: str | None = None
     is_active: bool = True
+    employee_code: str | None = None
+    date_of_birth: date | None = None
+    gender: str | None = None
+    address: str | None = None
+    city: str | None = None
+    emergency_contact: str | None = None
+    bank_name: str | None = None
+    account_number: str | None = None
+    ifsc_code: str | None = None
+    id_proof_type: str | None = None
+    id_proof_number: str | None = None
 
     class Config:
         from_attributes = True

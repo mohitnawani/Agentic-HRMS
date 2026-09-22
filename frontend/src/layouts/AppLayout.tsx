@@ -60,7 +60,19 @@ export default function AppLayout() {
           ))}
         </nav>
         <div className="border-t pt-3 mt-3">
-          <p className="text-xs text-muted-foreground px-2 mb-2 truncate">{email}</p>
+          <div className="flex items-center gap-2.5 px-2 mb-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-teal-600 text-sm font-semibold text-white">
+              {(email?.charAt(0) ?? "?").toUpperCase()}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium">
+                {email?.split("@")[0] ?? "User"}
+              </span>
+              <span className="block text-xs uppercase text-muted-foreground">
+                {role ?? ""}
+              </span>
+            </span>
+          </div>
           <Button variant="outline" size="sm" className="w-full" onClick={() => dispatch(logout())}>
             Log out
           </Button>

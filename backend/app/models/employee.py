@@ -32,6 +32,23 @@ class Employee(Base, TimestampMixin):
         ForeignKey("designations.id"), nullable=True
     )
     photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    employee_code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+
+    # personal info
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    emergency_contact: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # banking
+    bank_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    account_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ifsc_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # documents
+    id_proof_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    id_proof_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="employee")
     department: Mapped["Department"] = relationship(back_populates="employees")

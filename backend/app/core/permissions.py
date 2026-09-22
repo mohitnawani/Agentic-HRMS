@@ -7,7 +7,7 @@ PERMISSIONS: dict[str, set[RoleEnum]] = {
     "employee:read_all": {RoleEnum.ADMIN, RoleEnum.HR},
     "employee:read_self": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
     "employee:update": {RoleEnum.ADMIN, RoleEnum.HR},
-    "employee:delete": {RoleEnum.ADMIN},
+    "employee:delete": {RoleEnum.ADMIN, RoleEnum.HR},
 
     #departments and designations
     "department:write": {RoleEnum.ADMIN},

@@ -13,6 +13,17 @@ export interface Employee {
   designation_id: string | null;
   photo_url: string | null;
   is_active: boolean;
+  employee_code: string | null;
+  date_of_birth: string | null;
+  gender: string | null;
+  address: string | null;
+  city: string | null;
+  emergency_contact: string | null;
+  bank_name: string | null;
+  account_number: string | null;
+  ifsc_code: string | null;
+  id_proof_type: string | null;
+  id_proof_number: string | null;
 }
 
 export interface EmployeeCreatePayload {
@@ -24,6 +35,17 @@ export interface EmployeeCreatePayload {
   date_of_joining: string;
   department_id?: string;
   designation_id?: string;
+  employee_code?: string;
+  date_of_birth?: string;
+  gender?: string;
+  address?: string;
+  city?: string;
+  emergency_contact?: string;
+  bank_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  id_proof_type?: string;
+  id_proof_number?: string;
 }
 
 export type EmployeeUpdatePayload = Partial<

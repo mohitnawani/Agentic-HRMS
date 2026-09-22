@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.attendance import AttendanceCorrection, AttendanceRead, AttendanceSummary
+from app.schemas.attendance import AttendanceCorrection, AttendanceRead, AttendanceSummary, MonthCalendar
 from app.services import attendance_service, employee_service
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -43,12 +43,32 @@ async def my_summary(
     return await attendance_service.get_monthly_summary(db, employee.id, year, month)
 
 
+@router.get("/me/calendar", response_model=MonthCalendar, dependencies=[Depends(require_permission("attendance:check_in_out"))])
+async def my_calendar(
+    year: int = Query(...), month: int = Query(...),
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    employee = await employee_service.get_employee_by_user_id(db, current_user.id)
+    days = await attendance_service.get_month_calendar(db, employee.id, employee.date_of_joining, year, month)
+    return {"year": year, "month": month, "days": days}
+
+
 @router.get("/{employee_id}", response_model=list[AttendanceRead], dependencies=[Depends(require_permission("attendance:read_all"))])
 async def employee_history(
     employee_id: uuid.UUID, start: date | None = Query(None), end: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     return await attendance_service.get_history(db, employee_id, start, end)
+
+
+@router.get("/{employee_id}/calendar", response_model=MonthCalendar, dependencies=[Depends(require_permission("attendance:read_all"))])
+async def employee_calendar(
+    employee_id: uuid.UUID, year: int = Query(...), month: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    employee = await employee_service.get_employee(db, employee_id)
+    days = await attendance_service.get_month_calendar(db, employee.id, employee.date_of_joining, year, month)
+    return {"year": year, "month": month, "days": days}
 
 
 @router.patch("/{attendance_id}/correct", response_model=AttendanceRead, dependencies=[Depends(require_permission("attendance:correct"))])

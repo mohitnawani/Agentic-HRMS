@@ -31,3 +31,24 @@ class AttendanceSummary(BaseModel):
     absent: int
     late: int
     half_day: int
+
+
+class CalendarDay(BaseModel):
+    date: date
+    state: str
+    is_weekend: bool
+    before_joining: bool
+    attendance_id: uuid.UUID | None = None
+    check_in: datetime | None = None
+    check_out: datetime | None = None
+    worked_minutes: int | None = None
+    overtime_minutes: int | None = None
+    missing_punch: bool = False
+    leave_name: str | None = None
+    leave_status: str | None = None
+
+
+class MonthCalendar(BaseModel):
+    year: int
+    month: int
+    days: list[CalendarDay]

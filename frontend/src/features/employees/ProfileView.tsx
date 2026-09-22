@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Building2, Mail, Phone, CalendarDays, Hash, ShieldCheck, Briefcase } from "lucide-react";
+import { Building2, Mail, Phone, CalendarDays, Hash, ShieldCheck, Briefcase, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import EmptyState from "@/components/EmptyState";
 import { useDepartments } from "@/features/departments/useDepartments";
@@ -7,10 +7,6 @@ import { useDesignations } from "@/features/designations/useDesignations";
 import type { Employee } from "./employeeApi";
 
 const TABS = ["Work Profile", "Personal Info", "Banking", "Documents"] as const;
-
-function initials(first: string, last: string) {
-  return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
-}
 
 function FieldRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
@@ -44,13 +40,13 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
             className="size-16 rounded-md object-cover border"
           />
         ) : (
-          <div
-            className="flex size-16 items-center justify-center rounded-md bg-[#C1502E]/10 text-2xl font-semibold text-[#C1502E]"
-            role="img"
-            aria-label="No photo uploaded"
-          >
-            {initials(employee.first_name, employee.last_name)}
-          </div>
+            <div
+              className="flex size-20 items-center justify-center rounded-full border bg-muted"
+              role="img"
+              aria-label="No photo uploaded"
+            >
+              <User size={32} className="text-muted-foreground" />
+            </div>
         )}
 
         <p className="mt-4 text-xs text-muted-foreground">Employee file</p>
@@ -62,7 +58,7 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
         <div className="mt-3 flex flex-wrap gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs">
             <Hash size={12} className="text-muted-foreground" />
-            Record {employee.id.slice(0, 3).toUpperCase()}
+            Record {employee.employee_code ?? employee.id.slice(0, 3).toUpperCase()}
           </span>
           <Badge variant={employee.is_active ? "success" : "outline"}>
             <ShieldCheck size={12} />
@@ -121,13 +117,36 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
             <div className="max-w-md space-y-2">
               <p><span className="text-muted-foreground">Email:</span> {employee.email}</p>
               <p><span className="text-muted-foreground">Phone:</span> {employee.phone ?? "—"}</p>
+              <p><span className="text-muted-foreground">Date of birth:</span> {employee.date_of_birth ?? "—"}</p>
+              <p><span className="text-muted-foreground">Gender:</span> {employee.gender ?? "—"}</p>
+              <p><span className="text-muted-foreground">Address:</span> {employee.address ?? "—"}</p>
+              <p><span className="text-muted-foreground">City:</span> {employee.city ?? "—"}</p>
+              <p><span className="text-muted-foreground">Emergency contact:</span> {employee.emergency_contact ?? "—"}</p>
             </div>
           )}
           {tab === "Banking" && (
-            <EmptyState title="No banking details yet" description="Banking information is not maintained for this employee." />
+            employee.bank_name || employee.account_number || employee.ifsc_code ? (
+              <div className="max-w-md space-y-2">
+                <p><span className="text-muted-foreground">Bank:</span> {employee.bank_name ?? "—"}</p>
+                <p>
+                  <span className="text-muted-foreground">Account:</span>{" "}
+                  {employee.account_number ? `••••${employee.account_number.slice(-4)}` : "—"}
+                </p>
+                <p><span className="text-muted-foreground">IFSC:</span> {employee.ifsc_code ?? "—"}</p>
+              </div>
+            ) : (
+              <EmptyState title="No banking details yet" description="Banking information is not maintained for this employee." />
+            )
           )}
           {tab === "Documents" && (
-            <EmptyState title="No documents yet" description="Uploaded documents will appear here." />
+            employee.id_proof_type || employee.id_proof_number ? (
+              <div className="max-w-md space-y-2">
+                <p><span className="text-muted-foreground">ID proof:</span> {employee.id_proof_type ?? "—"}</p>
+                <p><span className="text-muted-foreground">ID number:</span> {employee.id_proof_number ?? "—"}</p>
+              </div>
+            ) : (
+              <EmptyState title="No documents yet" description="Uploaded documents will appear here." />
+            )
           )}
         </div>
       </div>

@@ -29,6 +29,17 @@ def _to_read_schema(employee, user: User) -> EmployeeRead:
         designation_id=employee.designation_id,
         photo_url=employee.photo_url,
         is_active=user.is_active,
+        employee_code=employee.employee_code,
+        date_of_birth=employee.date_of_birth,
+        gender=employee.gender,
+        address=employee.address,
+        city=employee.city,
+        emergency_contact=employee.emergency_contact,
+        bank_name=employee.bank_name,
+        account_number=employee.account_number,
+        ifsc_code=employee.ifsc_code,
+        id_proof_type=employee.id_proof_type,
+        id_proof_number=employee.id_proof_number,
     )
 
 
@@ -70,8 +81,12 @@ async def update_employee(employee_id: uuid.UUID, data: EmployeeUpdate, db: Asyn
 
 
 @router.delete("/{employee_id}", status_code=204, dependencies=[Depends(require_permission("employee:delete"))])
-async def delete_employee(employee_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    await employee_service.delete_employee(db, employee_id)
+async def delete_employee(
+    employee_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await employee_service.delete_employee(db, employee_id, current_user)
 
 
 @router.post("/{employee_id}/photo", response_model=EmployeeRead, dependencies=[Depends(require_permission("employee:update"))])

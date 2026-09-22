@@ -36,8 +36,23 @@ async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
         date_of_joining=data.date_of_joining,
         department_id=data.department_id,
         designation_id=data.designation_id,
+        employee_code=data.employee_code,
+        date_of_birth=data.date_of_birth,
+        gender=data.gender,
+        address=data.address,
+        city=data.city,
+        emergency_contact=data.emergency_contact,
+        bank_name=data.bank_name,
+        account_number=data.account_number,
+        ifsc_code=data.ifsc_code,
+        id_proof_type=data.id_proof_type,
+        id_proof_number=data.id_proof_number,
     )
     db.add(employee)
+    await db.flush()  # get employee.id for the code below
+    if not employee.employee_code:
+        count_result = await db.execute(select(Employee.id))
+        employee.employee_code = f"EMP-{len(count_result.scalars().all()):04d}"
     await db.commit()
     await db.refresh(employee)
     await leave_service.initialize_balances_for_employee(db, employee.id)
@@ -77,10 +92,13 @@ async def update_employee(db: AsyncSession, employee_id: uuid.UUID, data: Employ
     return employee
 
 
-async def delete_employee(db: AsyncSession, employee_id: uuid.UUID) -> None:
+async def delete_employee(db: AsyncSession, employee_id: uuid.UUID, actor: User) -> None:
     employee = await get_employee(db, employee_id)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
     user = user_result.scalar_one_or_none()
+    if actor.role == RoleEnum.HR and (user is None or user.role != RoleEnum.EMPLOYEE):
+        # HR may delete employees only — never admins, HRs (including self), or orphans
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR can only delete employee accounts")
     if user:
         user.is_active = False  # soft-delete the login, don't hard-delete the account
     # remove rows owned by this employee so the profile delete doesn't violate FKs

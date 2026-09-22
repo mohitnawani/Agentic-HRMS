@@ -21,6 +21,9 @@ export default function EmployeeListPage() {
   const [toDelete, setToDelete] = useState<Employee | null>(null);
 
   const canManage = role === "admin" || role === "hr";
+  // Admin deletes anyone; HR deletes employees only (never admins/HRs); employee deletes no one.
+  const canDelete = (targetRole: string) =>
+    role === "admin" || (role === "hr" && targetRole === "employee");
 
   if (isLoading) return <LoadingSkeleton rows={6} />;
   if (isError) return <p className="text-destructive">Failed to load employees.</p>;
@@ -55,7 +58,7 @@ export default function EmployeeListPage() {
                 <Button size="sm" variant="outline" onClick={() => navigate(`/${role}/employees/${e.id}`)}>
                   View
                 </Button>
-                {canManage && (
+                {canDelete(e.role) && (
                   <Button size="sm" variant="destructive" onClick={() => setToDelete(e)}>
                     Delete
                   </Button>

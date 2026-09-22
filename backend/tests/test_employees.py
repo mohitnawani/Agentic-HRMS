@@ -60,3 +60,72 @@ async def test_upload_employee_photo(client, admin_token):
     public_id = good.json()["photo_url"].rsplit("/", 1)[-1].rsplit(".", 1)[0]
     cloudinary.uploader.destroy(f"hrms/employees/{public_id}", resource_type="image")
     assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
+
+
+async def _hr_headers(client, admin_token):
+    h_admin = {"Authorization": f"Bearer {admin_token}"}
+    email = f"hrdel_{uuid.uuid4().hex[:6]}@example.com"
+    created = await client.post("/api/v1/users", json={
+        "email": email, "password": "testpass123", "role": "hr",
+        "first_name": "HR", "last_name": "Del",
+    }, headers=h_admin)
+    assert created.status_code == 200
+    login = await client.post(
+        "/api/v1/auth/login", data={"username": email, "password": "testpass123"}
+    )
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}, email
+
+
+async def _employee_profile_id(client, admin_token, prefix="victim"):
+    h_admin = {"Authorization": f"Bearer {admin_token}"}
+    email = f"{prefix}_{uuid.uuid4().hex[:6]}@example.com"
+    created = await client.post("/api/v1/employees", json={
+        "email": email, "password": "testpass123",
+        "first_name": "Victim", "last_name": "User",
+        "date_of_joining": "2026-09-15",
+    }, headers=h_admin)
+    assert created.status_code == 200
+    return created.json()["id"]
+
+
+async def _profile_id_for_email(client, admin_token, email):
+    h_admin = {"Authorization": f"Bearer {admin_token}"}
+    listed = await client.get("/api/v1/employees", headers=h_admin)
+    return next(e["id"] for e in listed.json() if e["email"] == email)
+
+
+@pytest.mark.asyncio
+async def test_hr_delete_rules(client, admin_token, employee_token):
+    h_admin = {"Authorization": f"Bearer {admin_token}"}
+    h_emp = {"Authorization": f"Bearer {employee_token}"}
+    h_hr, hr_email = await _hr_headers(client, admin_token)
+
+    # HR can delete an employee profile
+    victim_id = await _employee_profile_id(client, admin_token)
+    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_hr)).status_code == 204
+
+    # HR cannot delete its own (HR-role) profile
+    own_profile = await _profile_id_for_email(client, admin_token, hr_email)
+    assert (await client.delete(f"/api/v1/employees/{own_profile}", headers=h_hr)).status_code == 403
+
+    # HR cannot delete another HR's profile; admin can delete anyone
+    h_hr2, hr2_email = await _hr_headers(client, admin_token)
+    hr2_profile = await _profile_id_for_email(client, admin_token, hr2_email)
+    assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_hr)).status_code == 403
+    assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_admin)).status_code == 204
+
+    # HR cannot delete an admin-role profile either
+    adm_email = f"admprof_{uuid.uuid4().hex[:6]}@example.com"
+    adm = await client.post("/api/v1/users", json={
+        "email": adm_email, "password": "testpass123",
+        "role": "admin", "first_name": "Adm", "last_name": "Prof",
+    }, headers=h_admin)
+    assert adm.status_code == 200
+    adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
+    assert (await client.delete(f"/api/v1/employees/{adm_profile}", headers=h_hr)).status_code == 403
+    assert (await client.delete(f"/api/v1/employees/{adm_profile}", headers=h_admin)).status_code == 204
+
+    # employee role cannot delete anyone
+    victim2 = await _employee_profile_id(client, admin_token, prefix="victim2")
+    assert (await client.delete(f"/api/v1/employees/{victim2}", headers=h_emp)).status_code == 403
+    assert (await client.delete(f"/api/v1/employees/{victim2}", headers=h_admin)).status_code == 204

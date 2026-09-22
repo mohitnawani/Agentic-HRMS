@@ -46,3 +46,28 @@ export const correctAttendance = (
   attendanceId: string,
   data: { check_in?: string; check_out?: string; status?: string; correction_reason: string }
 ) => apiClient.patch<AttendanceRecord>(`/attendance/${attendanceId}/correct`, data).then((r) => r.data);
+
+// month calendar
+export interface CalendarDay {
+  date: string;
+  state: string;
+  is_weekend: boolean;
+  before_joining: boolean;
+  attendance_id: string | null;
+  check_in: string | null;
+  check_out: string | null;
+  worked_minutes: number | null;
+  overtime_minutes: number | null;
+  missing_punch: boolean;
+  leave_name: string | null;
+  leave_status: string | null;
+}
+
+export interface MonthCalendar {
+  year: number;
+  month: number;
+  days: CalendarDay[];
+}
+
+export const getMonthCalendar = (year: number, month: number) =>
+  apiClient.get<MonthCalendar>("/attendance/me/calendar", { params: { year, month } }).then((r) => r.data);

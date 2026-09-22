@@ -5,7 +5,7 @@ export const useCheckIn = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.checkIn,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", "me"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
   });
 };
 
@@ -13,7 +13,7 @@ export const useCheckOut = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.checkOut,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", "me"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
   });
 };
 
@@ -22,6 +22,12 @@ export const useMyAttendanceHistory = () =>
 
 export const useMySummary = (year: number, month: number) =>
   useQuery({ queryKey: ["attendance", "me", "summary", year, month], queryFn: () => api.getMySummary(year, month) });
+
+export const useMonthCalendar = (year: number, month: number) =>
+  useQuery({
+    queryKey: ["attendance", "me", "calendar", year, month],
+    queryFn: () => api.getMonthCalendar(year, month),
+  });
 
 export const useEmployeeHistory = (employeeId: string) =>
   useQuery({

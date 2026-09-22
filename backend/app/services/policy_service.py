@@ -1,14 +1,27 @@
 import uuid
-from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import cloudinary
+import cloudinary.uploader
+
+from app.core.config import settings
 from app.models.policy_document import PolicyDocument
 
-UPLOAD_DIR = Path("uploads/policies")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+def _ensure_configured() -> None:
+    if not (settings.cloudinary_cloud_name and settings.cloudinary_api_key and settings.cloudinary_api_secret):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Cloudinary is not configured (set CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET)",
+        )
+    cloudinary.config(
+        cloud_name=settings.cloudinary_cloud_name,
+        api_key=settings.cloudinary_api_key,
+        api_secret=settings.cloudinary_api_secret,
+    )
 
 
 async def upload_policy(
@@ -16,15 +29,23 @@ async def upload_policy(
 ) -> PolicyDocument:
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files allowed")
+    _ensure_configured()
 
-    file_id = uuid.uuid4()
-    file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
     contents = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(contents)
+    try:
+        result = cloudinary.uploader.upload(
+            contents,
+            folder="hrms/policies",
+            resource_type="raw",
+            public_id=f"{uuid.uuid4()}_{file.filename}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Cloudinary upload failed: {exc}"
+        )
 
     doc = PolicyDocument(
-        title=title, category=category, file_path=str(file_path), uploaded_by=uploaded_by
+        title=title, category=category, file_path=result["secure_url"], uploaded_by=uploaded_by
     )
     db.add(doc)
     await db.commit()

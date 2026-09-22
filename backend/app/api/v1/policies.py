@@ -1,7 +1,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
@@ -28,5 +27,7 @@ async def list_policies(category: str | None = None, db: AsyncSession = Depends(
 
 @router.get("/{doc_id}/download", dependencies=[Depends(require_permission("policy:read"))])
 async def download_policy(doc_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    # Return the URL as JSON instead of a 307 redirect: browsers re-send the
+    # Bearer token when following cross-origin redirects, and Cloudinary 401s it.
     doc = await policy_service.get_policy(db, doc_id)
-    return FileResponse(doc.file_path, filename=doc.title)
+    return {"download_url": doc.file_path}

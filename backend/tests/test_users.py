@@ -65,3 +65,19 @@ async def test_activate_missing_user_404(client, admin_token):
     assert (await client.patch(
         "/api/v1/users/00000000-0000-0000-0000-000000000000/activate", headers=h
     )).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_list_users_and_employee_forbidden(client, admin_token, employee_token):
+    h_admin = {"Authorization": f"Bearer {admin_token}"}
+    h_emp = {"Authorization": f"Bearer {employee_token}"}
+
+    created = await client.post("/api/v1/users", json=_new_user_payload(), headers=h_admin)
+    assert created.status_code == 200
+
+    listed = await client.get("/api/v1/users", headers=h_admin)
+    assert listed.status_code == 200
+    assert isinstance(listed.json(), list)
+    assert any(u["id"] == created.json()["id"] for u in listed.json())
+
+    assert (await client.get("/api/v1/users", headers=h_emp)).status_code == 403

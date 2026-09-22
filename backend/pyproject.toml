@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings",
     "python-jose[cryptography]",
     "bcrypt",
+    "cloudinary",
     "email-validator",
     "python-multipart",
 ]

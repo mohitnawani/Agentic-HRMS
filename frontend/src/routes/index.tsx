@@ -15,6 +15,10 @@ import AttendanceHistoryPage from "@/features/attendance/AttendanceHistoryPage";
 import AttendanceCorrectionPage from "@/features/attendance/AttendanceCorrectionPage";
 import LeavePage from "@/features/leave/LeavePage";
 import LeaveApprovalsPage from "@/features/leave/LeaveApprovalsPage";
+import PoliciesPage from "@/features/policies/PoliciesPage";
+import HolidaysPage from "@/features/holidays/HolidaysPage";
+import AnnouncementsPage from "@/features/announcements/AnnouncementsPage";
+import UsersPage from "@/features/users/UsersPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage/> },
@@ -28,7 +32,7 @@ export const router = createBrowserRouter([
           { path: "/employee/profile", element: <PlaceholderPage title="My Profile" /> },
           { path: "/employee/attendance", element: <AttendanceHistoryPage /> },
           { path: "/employee/leave", element: <LeavePage /> },
-          { path: "/employee/policies", element: <PlaceholderPage title="Policies" /> },
+          { path: "/employee/policies", element: <PoliciesPage /> },
           { path: "/employee/assistant", element: <PlaceholderPage title="Assistant" /> },
         ],
       },
@@ -46,7 +50,8 @@ export const router = createBrowserRouter([
           { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
           { path: "/hr/attendance", element: <AttendanceCorrectionPage /> },
           { path: "/hr/leave", element: <LeaveApprovalsPage /> },
-          { path: "/hr/policies", element: <PlaceholderPage title="Policies" /> },
+          { path: "/hr/policies", element: <PoliciesPage /> },
+          { path: "/hr/announcements", element: <AnnouncementsPage /> },
           { path: "/hr/assistant", element: <PlaceholderPage title="Assistant" /> },
         ],
       },
@@ -64,7 +69,9 @@ export const router = createBrowserRouter([
           { path: "/admin/employees/:id", element: <EmployeeDetailPage /> },
           { path: "/admin/departments", element: <DepartmentPage /> },
           { path: "/admin/designations", element: <DesignationPage /> },
-          { path: "/admin/users", element: <PlaceholderPage title="Users" /> },
+          { path: "/admin/holidays", element: <HolidaysPage /> },
+          { path: "/admin/announcements", element: <AnnouncementsPage /> },
+          { path: "/admin/users", element: <UsersPage /> },
           { path: "/admin/assistant", element: <PlaceholderPage title="Assistant" /> },
         ],
       },

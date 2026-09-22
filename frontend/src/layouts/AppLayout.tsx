@@ -19,6 +19,7 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "Attendance", path: "/hr/attendance" },
     { label: "Leave Approvals", path: "/hr/leave" },
     { label: "Policies", path: "/hr/policies" },
+    { label: "Announcements", path: "/hr/announcements" },
     { label: "Assistant", path: "/hr/assistant" },
   ],
   admin: [
@@ -27,6 +28,8 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "Departments", path: "/admin/departments" },
     { label: "Designations", path: "/admin/designations" },
     { label: "Users", path: "/admin/users" },
+    { label: "Holidays", path: "/admin/holidays" },
+    { label: "Announcements", path: "/admin/announcements" },
     { label: "Assistant", path: "/admin/assistant" },
   ],
 };

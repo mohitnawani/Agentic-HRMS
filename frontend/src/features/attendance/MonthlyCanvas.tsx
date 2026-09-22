@@ -110,7 +110,7 @@ export default function MonthlyCanvas() {
   const leadBlanks = data && data.days.length > 0 ? new Date(data.days[0].date + "T00:00:00").getDay() : 0;
 
   return (
-    <div className="rounded-lg border bg-white p-4">
+    <div className="rounded-lg border bg-white p-4 ">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-wide text-gray-500">Monthly Canvas</p>

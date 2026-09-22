@@ -113,8 +113,8 @@ export default function LeavePage() {
         <LoadingSkeleton rows={3} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {balances?.map((b) => (
-            <Card key={b.leave_type_id}>
+          {balances?.map((b, i) => (
+            <Card key={b.leave_type_id} tone={(["amber", "violet", "teal"] as const)[i % 3]}>
               <CardHeader><CardTitle className="text-sm text-muted-foreground">{b.leave_type_name}</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-3xl font-semibold">{b.remaining_days}<span className="text-base text-muted-foreground"> / {b.total_days}</span></p>

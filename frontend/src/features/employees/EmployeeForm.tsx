@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeader from "@/components/PageHeader";
 import { useDepartments } from "@/features/departments/useDepartments";
-import { useCreateEmployee } from "./useEmployees";
+import { useCreateEmployee, useUploadPhoto } from "./useEmployees";
 import { useAppSelector } from "@/store/hooks";
 
 const schema = z.object({
@@ -20,6 +20,7 @@ const schema = z.object({
   phone: z.string().optional(),
   date_of_joining: z.string().min(1, "Required"),
   department_id: z.string().optional(),
+  photo: z.any().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -29,13 +30,19 @@ export default function EmployeeForm() {
   const role = useAppSelector((s) => s.auth.role);
   const { data: departments } = useDepartments();
   const createEmployee = useCreateEmployee();
+  const uploadPhoto = useUploadPhoto();
 
   const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
   });
 
   const onSubmit = async (values: FormValues) => {
-    await createEmployee.mutateAsync(values);
+    const { photo, ...payload } = values;
+    const created = await createEmployee.mutateAsync(payload);
+    const file = photo?.[0];
+    if (file) {
+      await uploadPhoto.mutateAsync({ id: created.id, file });
+    }
     navigate(`/${role}/employees`);
   };
 
@@ -89,6 +96,11 @@ export default function EmployeeForm() {
                   </Select>
                 )}
               />
+            </div>
+            <div className="space-y-1">
+              <Label>Photo (optional)</Label>
+              <Input type="file" accept="image/*" {...register("photo")} />
+              <p className="text-xs text-muted-foreground">Portrait photo, uploaded after the profile is created.</p>
             </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={isSubmitting}>

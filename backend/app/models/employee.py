@@ -31,6 +31,7 @@ class Employee(Base, TimestampMixin):
     designation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("designations.id"), nullable=True
     )
+    photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="employee")
     department: Mapped["Department"] = relationship(back_populates="employees")

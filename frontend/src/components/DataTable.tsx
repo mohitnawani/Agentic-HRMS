@@ -18,7 +18,7 @@ export default function DataTable<T>({ columns, data, emptyTitle = "No records f
     return <EmptyState title={emptyTitle} />;
   }
   return (
-    <div className="rounded-lg border overflow-hidden">
+    <div className="rounded-lg border max-h-[600px] overflow-y-auto">
       <table className="w-full text-sm">
         <thead className="bg-muted/50">
           <tr>

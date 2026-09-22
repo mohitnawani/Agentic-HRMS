@@ -9,6 +9,7 @@ import AdminDashboard from "@/features/dashboard/AdminDashboard";
 import EmployeeListPage from "@/features/employees/EmployeeListPage";
 import EmployeeForm from "@/features/employees/EmployeeForm";
 import EmployeeDetailPage from "@/features/employees/EmployeeDetailPage";
+import MyProfilePage from "@/features/employees/MyProfilePage";
 import DepartmentPage from "@/features/departments/DepartmentPage";
 import DesignationPage from "@/features/designations/DesignationPage";
 import AttendanceHistoryPage from "@/features/attendance/AttendanceHistoryPage";
@@ -29,7 +30,7 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: "/employee/dashboard", element: <EmployeeDashboard /> },
-          { path: "/employee/profile", element: <PlaceholderPage title="My Profile" /> },
+          { path: "/employee/profile", element: <MyProfilePage /> },
           { path: "/employee/attendance", element: <AttendanceHistoryPage /> },
           { path: "/employee/leave", element: <LeavePage /> },
           { path: "/employee/policies", element: <PoliciesPage /> },

@@ -10,6 +10,9 @@ export const useEmployees = (departmentId?: string) =>
 export const useEmployee = (id: string) =>
   useQuery({ queryKey: ["employees", id], queryFn: () => api.getEmployee(id), enabled: !!id });
 
+export const useMyProfile = () =>
+  useQuery({ queryKey: ["employees", "me"], queryFn: api.getMyProfile });
+
 export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -31,6 +34,14 @@ export const useDeleteEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.deleteEmployee,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
+  });
+};
+
+export const useUploadPhoto = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => api.uploadEmployeePhoto(id, file),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
   });
 };

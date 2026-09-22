@@ -11,6 +11,8 @@ export interface Employee {
   date_of_joining: string;
   department_id: string | null;
   designation_id: string | null;
+  photo_url: string | null;
+  is_active: boolean;
 }
 
 export interface EmployeeCreatePayload {
@@ -36,6 +38,9 @@ export const listEmployees = (departmentId?: string) =>
 export const getEmployee = (id: string) =>
   apiClient.get<Employee>(`/employees/${id}`).then((res) => res.data);
 
+export const getMyProfile = () =>
+  apiClient.get<Employee>("/employees/me").then((res) => res.data);
+
 export const createEmployee = (data: EmployeeCreatePayload) =>
   apiClient.post<Employee>("/employees", data).then((res) => res.data);
 
@@ -43,3 +48,9 @@ export const updateEmployee = (id: string, data: EmployeeUpdatePayload) =>
   apiClient.patch<Employee>(`/employees/${id}`, data).then((res) => res.data);
 
 export const deleteEmployee = (id: string) => apiClient.delete(`/employees/${id}`);
+
+export const uploadEmployeePhoto = (id: string, file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return apiClient.post<Employee>(`/employees/${id}/photo`, form).then((res) => res.data);
+};

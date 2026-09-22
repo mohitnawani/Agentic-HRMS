@@ -1,11 +1,13 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.models.attendance import Attendance
 from app.models.employee import Employee
+from app.models.leave import LeaveBalance, LeaveRequest
 from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
@@ -81,5 +83,16 @@ async def delete_employee(db: AsyncSession, employee_id: uuid.UUID) -> None:
     user = user_result.scalar_one_or_none()
     if user:
         user.is_active = False  # soft-delete the login, don't hard-delete the account
+    # remove rows owned by this employee so the profile delete doesn't violate FKs
+    for model in (LeaveRequest, LeaveBalance, Attendance):
+        await db.execute(delete(model).where(model.employee_id == employee_id))
     await db.delete(employee)
     await db.commit()
+
+
+async def set_employee_photo(db: AsyncSession, employee_id: uuid.UUID, photo_url: str) -> Employee:
+    employee = await get_employee(db, employee_id)
+    employee.photo_url = photo_url
+    await db.commit()
+    await db.refresh(employee)
+    return employee

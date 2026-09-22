@@ -19,6 +19,7 @@ class EmployeeUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     phone: str | None = None
+    date_of_joining: date | None = None
     department_id: uuid.UUID | None = None
     designation_id: uuid.UUID | None = None
 
@@ -34,6 +35,8 @@ class EmployeeRead(BaseModel):
     date_of_joining: date
     department_id: uuid.UUID | None
     designation_id: uuid.UUID | None
+    photo_url: str | None = None
+    is_active: bool = True
 
     class Config:
         from_attributes = True

@@ -40,7 +40,7 @@ export default function AppLayout() {
   const items = role ? NAV_ITEMS[role] : [];
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden ">
       <aside className="w-64 border-r bg-muted/30 p-4 flex flex-col">
         <div className="text-lg font-semibold mb-6 px-2">Agentic HRMS</div>
         <nav className="flex-1 space-y-1">
@@ -66,7 +66,7 @@ export default function AppLayout() {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 p-6 overflow-y-auto">
+      <main className="flex-1 p-6 overflow-hidden">
         <Outlet />
       </main>
     </div>

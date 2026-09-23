@@ -19,8 +19,8 @@
   --color-success-foreground: #fafafa;
   --color-warning: #f59e0b;
   --color-warning-foreground: #451a03;
-  --color-border: #e4e4e7;
-  --color-input: #e4e4e7;
+  --color-border: color-mix(in srgb, #e4e4e7 40%, transparent);
+  --color-input: color-mix(in srgb, #e4e4e7 40%, transparent);
   --color-ring: #18181b;
   --radius-lg: 0.5rem;
   --radius-md: calc(0.5rem - 2px);

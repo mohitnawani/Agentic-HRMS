@@ -18,10 +18,10 @@ export default function DataTable<T>({ columns, data, emptyTitle = "No records f
     return <EmptyState title={emptyTitle} />;
   }
   return (
-    <div className="rounded-lg border max-h-[600px] overflow-y-auto">
+    <div className="rounded-lg border border-border max-h-[600px] overflow-y-auto">
       <table className="w-full text-sm">
-        <thead className="bg-muted/50">
-          <tr>
+        <thead>
+          <tr className="border-b border-border">
             {columns.map((col) => (
               <th key={col.header} className="text-left font-medium px-4 py-2.5">
                 {col.header}
@@ -31,7 +31,7 @@ export default function DataTable<T>({ columns, data, emptyTitle = "No records f
         </thead>
         <tbody>
           {data.map((row, i) => (
-            <tr key={rowKey(row, i)} className="border-t hover:bg-muted/30">
+            <tr key={rowKey(row, i)} className="border-t border-border hover:bg-muted/30">
               {columns.map((col) => (
                 <td key={col.header} className="px-4 py-2.5">
                   {col.render(row)}

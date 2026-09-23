@@ -4,13 +4,13 @@ import { cn } from "@/lib/utils";
 
 
 const toneClass: Record<string, string> = {
-  amber: "bg-amber-50 border-amber-200",
-  violet: "bg-violet-50 border-violet-200",
-  teal: "bg-teal-50 border-teal-200",
+  sage: "bg-secondary border-border",
+  moss: "bg-accent/60 border-border",
+  mint: "bg-muted border-border",
 };
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  tone?: "amber" | "violet" | "teal";
+  tone?: "sage" | "moss" | "mint";
 }
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
@@ -18,7 +18,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     <div
       ref={ref}
       className={cn(
-        "rounded-lg border bg-card text-card-foreground shadow-sm",
+        "rounded-2xl border border-border bg-card text-card-foreground shadow-sm",
         tone && toneClass[tone],
         className
       )}

@@ -1,5 +1,5 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import { login as loginApi } from "@/features/auth/authApi";
+import { login as loginApi, googleLogin as googleLoginApi } from "@/features/auth/authApi";
 
 export type Role = "admin" | "hr" | "employee";
 
@@ -31,6 +31,20 @@ export const loginThunk = createAsyncThunk(
       return await loginApi(credentials.email, credentials.password);
     } catch {
       return rejectWithValue("Invalid email or password");
+    }
+  }
+);
+
+export const googleLoginThunk = createAsyncThunk(
+  "auth/googleLogin",
+  async (
+    credential: { idToken: string; email: string },
+    { rejectWithValue }
+  ) => {
+    try {
+      return await googleLoginApi(credential.idToken, credential.email);
+    } catch {
+      return rejectWithValue("Google sign-in failed — is this email registered with HR?");
     }
   }
 );
@@ -76,6 +90,21 @@ const authSlice = createSlice({
       .addCase(loginThunk.rejected, (state, action) => {
         state.status = "failed";
         state.error = (action.payload as string | undefined) ?? "Login failed";
+      })
+      .addCase(googleLoginThunk.pending, (state) => {
+        state.status = "loading";
+        state.error = null;
+      })
+      .addCase(googleLoginThunk.fulfilled, (state, action) => {
+        state.status = "succeeded";
+        state.accessToken = action.payload.accessToken;
+        state.refreshToken = action.payload.refreshToken;
+        state.role = action.payload.role;
+        state.email = action.payload.email;
+      })
+      .addCase(googleLoginThunk.rejected, (state, action) => {
+        state.status = "failed";
+        state.error = (action.payload as string | undefined) ?? "Google sign-in failed";
       });
   },
 });

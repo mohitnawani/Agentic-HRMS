@@ -18,9 +18,9 @@ export default function DataTable<T>({ columns, data, emptyTitle = "No records f
     return <EmptyState title={emptyTitle} />;
   }
   return (
-    <div className="rounded-lg border border-border max-h-[600px] overflow-y-auto">
+    <div className="max-h-[600px] overflow-auto rounded-xl border border-border bg-card">
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0 bg-muted text-primary">
           <tr className="border-b border-border">
             {columns.map((col) => (
               <th key={col.header} className="text-left font-medium px-4 py-2.5">

@@ -24,3 +24,15 @@ export async function login(email: string, password: string) {
     email,
   };
 }
+
+export async function googleLogin(idToken: string, emailHint: string) {
+  const { data } = await apiClient.post<LoginResponse>("/auth/google", { id_token: idToken });
+
+  const payload = JSON.parse(atob(data.access_token.split(".")[1]));
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    role: payload.role as Role,
+    email: emailHint,
+  };
+}

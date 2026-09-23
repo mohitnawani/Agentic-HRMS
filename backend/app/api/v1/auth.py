@@ -6,9 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import RefreshRequest, Token
+from app.schemas.auth import GoogleLoginRequest, RefreshRequest, Token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -23,6 +24,40 @@ async def login(
 
     if user is None or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+
+    return Token(
+        access_token=create_access_token(user.id, user.role.value),
+        refresh_token=create_refresh_token(user.id, user.role.value),
+    )
+
+
+@router.post("/google", response_model=Token)
+async def google_login(payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Sign in with Google. Only works for emails HR already created —
+    unknown Google accounts are rejected, never auto-registered."""
+    if not settings.google_client_id:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Google login is not configured")
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token as google_id_token
+
+        info = google_id_token.verify_oauth2_token(
+            payload.id_token, google_requests.Request(), settings.google_client_id
+        )
+        email = info.get("email")
+        if not email or not info.get("email_verified"):
+            raise ValueError("Email not verified by Google")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google credential")
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No company account for this Google email")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
 

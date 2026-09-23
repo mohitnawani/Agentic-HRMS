@@ -17,15 +17,15 @@ export default function AdminDashboard() {
       <PageHeader title="Admin Dashboard" description="Organization-wide metrics" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card tone="amber">
+        <Card tone="sage">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Employees</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_employees}</p></CardContent>
         </Card>
-        <Card tone="violet">
+        <Card tone="moss">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Departments</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_departments}</p></CardContent>
         </Card>
-        <Card tone="teal">
+        <Card tone="mint">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Active Users</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.active_users}</p></CardContent>
         </Card>
@@ -39,7 +39,7 @@ export default function AdminDashboard() {
               <XAxis dataKey="name" fontSize={12} />
               <YAxis allowDecimals={false} fontSize={12} />
               <Tooltip />
-              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="count" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>

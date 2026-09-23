@@ -96,7 +96,7 @@ export default function ProfileView({ employee, actions }: { employee: Employee;
               className={
                 t === tab
                   ? "rounded-t-md border border-b-0 px-4 py-2 text-sm font-medium bg-background -mb-px"
-                  : "px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-blue-50"
+                  : "px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-muted"
               }
             >
               {t}

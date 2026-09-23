@@ -14,6 +14,7 @@ dependencies = [
     "bcrypt",
     "cloudinary",
     "email-validator",
+    "google-auth",
     "python-multipart",
 ]
 

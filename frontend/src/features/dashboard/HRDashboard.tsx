@@ -17,15 +17,15 @@ export default function HRDashboard() {
       <PageHeader title="HR Dashboard" description="Org-wide headcount, attendance, and pending approvals" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card tone="amber">
+        <Card tone="sage">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Employees</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_employees}</p></CardContent>
         </Card>
-        <Card tone="violet">
+        <Card tone="moss">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">On Leave Today</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.on_leave_today}</p></CardContent>
         </Card>
-        <Card tone="teal">
+        <Card tone="mint">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Pending Approvals</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.pending_approvals}</p></CardContent>
         </Card>
@@ -39,7 +39,7 @@ export default function HRDashboard() {
               <XAxis dataKey="name" fontSize={12} />
               <YAxis allowDecimals={false} fontSize={12} />
               <Tooltip />
-              <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="count" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>

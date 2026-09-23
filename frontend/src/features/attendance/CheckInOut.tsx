@@ -14,7 +14,7 @@ export default function CheckInOut() {
   const hasCheckedOut = !!todayRecord?.check_out;
 
   return (
-    <Card className="bg-blue-50 ">
+    <Card className="bg-secondary">
       <CardHeader><CardTitle>Today's Attendance</CardTitle></CardHeader>
       <CardContent className="flex items-center gap-4">
         <Button onClick={() => checkIn.mutate()} disabled={hasCheckedIn || checkIn.isPending}>

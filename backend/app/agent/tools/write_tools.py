@@ -18,6 +18,7 @@ from app.models.user import User
 from app.schemas.announcement import AnnouncementCreate
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
+from app.schemas.leave import LeaveRequestCreate
 from app.services import employee_service, leave_service
 
 
@@ -38,6 +39,7 @@ ACTION_PERMISSIONS = {
     "create_department": "department:write",
     "create_announcement": "announcement:write",
     "upload_policy": "policy:write",
+    "apply_leave": "leave:apply",
 }
 
 
@@ -149,6 +151,25 @@ async def reject_leave(
     except HTTPException as exc:
         raise _translate_service_error(exc) from exc
     return {"request_id": str(request.id), "status": request.status.value}
+
+
+async def apply_leave(
+    state: AgentState, db: AsyncSession, data: LeaveRequestCreate
+) -> dict[str, object]:
+    actor = await authorize_write_tool(state, db, "apply_leave")
+    employee = await db.scalar(select(Employee).where(Employee.user_id == actor.id))
+    if employee is None:
+        raise WriteToolConflict("No employee profile is linked to your account.")
+    try:
+        request = await leave_service.apply_leave(db, employee.id, data)
+    except HTTPException as exc:
+        raise _translate_service_error(exc) from exc
+    return {
+        "request_id": str(request.id),
+        "status": request.status.value,
+        "start_date": request.start_date.isoformat(),
+        "end_date": request.end_date.isoformat(),
+    }
 
 
 async def create_department(

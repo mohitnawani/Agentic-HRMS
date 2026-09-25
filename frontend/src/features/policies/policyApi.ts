@@ -23,5 +23,7 @@ export const uploadPolicy = (data: { title: string; category: string; file: File
   return apiClient.post<PolicyDocument>("/policies", form).then((r) => r.data);
 };
 
-export const getPolicyDownloadUrl = (id: string) =>
-  apiClient.get<{ download_url: string }>(`/policies/${id}/download`).then((r) => r.data.download_url);
+export const downloadPolicyFile = (id: string) =>
+  apiClient
+    .get<Blob>(`/policies/${id}/download`, { responseType: "blob" })
+    .then((response) => response.data);

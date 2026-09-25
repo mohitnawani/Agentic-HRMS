@@ -8,6 +8,7 @@ from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from sqlalchemy import select
 
+from app.api.v1 import policies as policies_api
 from app.db.session import async_session
 from app.models.document_chunk import EMBEDDING_DIMENSIONS, DocumentChunk
 from app.models.policy_document import PolicyDocument
@@ -288,6 +289,18 @@ async def test_policy_upload_creates_chunks_and_embeddings(
     )
     assert response.status_code == 200, response.text
     document_id = uuid.UUID(response.json()["id"])
+
+    monkeypatch.setattr(
+        policies_api, "_download_policy_bytes", lambda _: b"%PDF-test-content"
+    )
+    download = await client.get(
+        f"/api/v1/policies/{document_id}/download",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert download.status_code == 200
+    assert download.content == b"%PDF-test-content"
+    assert download.headers["content-type"] == "application/pdf"
+    assert "Leave%20Policy.pdf" in download.headers["content-disposition"]
 
     async with async_session() as db:
         rows = list(

@@ -1,8 +1,10 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import delete, select
 
+from app.agent.nodes.action_agent import select_action_tool
 from app.db.session import async_session
 from app.models.agent_conversation import AgentConversation
 from app.models.announcement import Announcement
@@ -10,6 +12,133 @@ from app.models.announcement import Announcement
 
 def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("add policies", "upload_policy"),
+        ("Add Policies", "upload_policy"),
+        ("upload policy document", "upload_policy"),
+        ("edit user", "update_employee"),
+        ("update employee", "update_employee"),
+        ("delete user", "delete_employee"),
+        ("Apply for leave", "apply_leave"),
+    ],
+)
+def test_action_tool_accepts_common_hr_phrases(message, expected):
+    assert select_action_tool(message) == expected
+
+
+@pytest.mark.asyncio
+async def test_employee_can_start_leave_application(client, employee_token):
+    response = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Apply for leave"},
+        headers=auth(employee_token),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["intent"] == "action"
+    assert "leave type" in body["answer"].lower()
+
+    repeated = await client.post(
+        "/api/v1/agent/chat",
+        json={
+            "message": "I want to apply for leave",
+            "conversation_id": body["conversation_id"],
+        },
+        headers=auth(employee_token),
+    )
+    assert "leave type" in repeated.json()["answer"].lower()
+
+    pending = await client.get(
+        f"/api/v1/agent/conversations/{body['conversation_id']}",
+        headers=auth(employee_token),
+    )
+    assert pending.json()["pending_interaction"] == {
+        "tool": "apply_leave",
+        "stage": "slots",
+        "missing_field": "leave_type_id",
+    }
+
+    cancelled = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "cancel", "conversation_id": body["conversation_id"]},
+        headers=auth(employee_token),
+    )
+    assert "cancelled" in cancelled.json()["answer"].lower()
+
+    cleared = await client.get(
+        f"/api/v1/agent/conversations/{body['conversation_id']}",
+        headers=auth(employee_token),
+    )
+    assert cleared.json()["pending_interaction"] is None
+
+    async with async_session() as db:
+        await db.execute(
+            delete(AgentConversation).where(
+                AgentConversation.id == uuid.UUID(body["conversation_id"])
+            )
+        )
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_failed_leave_confirmation_does_not_trap_next_application(
+    client, employee_token
+):
+    first = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Apply for leave"},
+        headers=auth(employee_token),
+    )
+    conversation_id = first.json()["conversation_id"]
+    day = datetime.now(UTC).date().isoformat()
+
+    review = await client.post(
+        "/api/v1/agent/chat",
+        json={
+            "message": "Review leave request",
+            "conversation_id": conversation_id,
+            "parameters": {
+                "leave_type_id": str(uuid.uuid4()),
+                "start_date": day,
+                "end_date": day,
+                "reason": "Personal appointment",
+            },
+        },
+        headers=auth(employee_token),
+    )
+    assert "confirm" in review.json()["answer"].lower()
+
+    failed = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "confirm", "conversation_id": conversation_id},
+        headers=auth(employee_token),
+    )
+    assert "no leave balance" in failed.json()["answer"].lower()
+
+    restored = await client.get(
+        f"/api/v1/agent/conversations/{conversation_id}",
+        headers=auth(employee_token),
+    )
+    assert restored.json()["pending_interaction"] is None
+
+    restarted = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "I want to apply for leave", "conversation_id": conversation_id},
+        headers=auth(employee_token),
+    )
+    assert "leave type" in restarted.json()["answer"].lower()
+
+    async with async_session() as db:
+        await db.execute(
+            delete(AgentConversation).where(
+                AgentConversation.id == uuid.UUID(conversation_id)
+            )
+        )
+        await db.commit()
 
 
 @pytest.mark.asyncio
@@ -65,7 +194,7 @@ async def test_agent_creates_announcement_after_confirmation(client, admin_token
 async def test_agent_collects_policy_metadata_before_file_upload(client, admin_token):
     first = await client.post(
         "/api/v1/agent/chat",
-        json={"message": "Upload policy"},
+        json={"message": "add policies"},
         headers=auth(admin_token),
     )
     conversation_id = first.json()["conversation_id"]

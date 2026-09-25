@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import axios from "axios";
 import { CheckCircle2, CircleAlert, Database, FileSearch, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEmployees } from "@/features/employees/useEmployees";
+import { useEmployee, useEmployees } from "@/features/employees/useEmployees";
 import { useUploadPolicy } from "@/features/policies/usePolicies";
+import { useLeaveTypes, useMyBalances } from "@/features/leave/useLeave";
 import { cn } from "@/lib/utils";
 import type { AgentToolResult } from "./agentTypes";
 
@@ -30,6 +32,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_department: "Create department",
   create_announcement: "Create announcement",
   upload_policy: "Upload policy",
+  apply_leave: "Apply for leave",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -48,11 +51,16 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const UPDATE_FIELDS = [
-  ["first_name", "First name"],
-  ["last_name", "Last name"],
-  ["phone", "Phone"],
-  ["employee_code", "Employee code"],
-  ["city", "City"],
+  { name: "first_name", label: "First name" },
+  { name: "last_name", label: "Last name" },
+  { name: "phone", label: "Phone" },
+  { name: "employee_code", label: "Employee code" },
+  { name: "date_of_joining", label: "Date of joining", type: "date" },
+  { name: "date_of_birth", label: "Date of birth", type: "date" },
+  { name: "gender", label: "Gender" },
+  { name: "city", label: "City" },
+  { name: "address", label: "Address" },
+  { name: "emergency_contact", label: "Emergency contact" },
 ] as const;
 
 type Respond = (
@@ -60,6 +68,13 @@ type Respond = (
   parameters?: Record<string, unknown>,
   displayMessage?: string,
 ) => void;
+
+function requestErrorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError<{ detail?: string }>(error)) {
+    return error.response?.data?.detail ?? error.message;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
 function EmployeeSelector({
   disabled,
@@ -69,8 +84,19 @@ function EmployeeSelector({
   onRespond: Respond;
 }) {
   const [employeeId, setEmployeeId] = useState("");
+  const [search, setSearch] = useState("");
   const { data: employees, isLoading, isError } = useEmployees();
   const selected = employees?.find((employee) => employee.id === employeeId);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredEmployees = employees?.filter((employee) =>
+    [
+      employee.first_name,
+      employee.last_name,
+      `${employee.first_name} ${employee.last_name}`,
+      employee.email,
+      employee.employee_code ?? "",
+    ].some((value) => value.toLowerCase().includes(normalizedSearch)),
+  );
 
   const submitEmployee = (event: FormEvent) => {
     event.preventDefault();
@@ -85,13 +111,19 @@ function EmployeeSelector({
   return (
     <form onSubmit={submitEmployee} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
       <label className="block text-xs font-medium text-primary">Select employee</label>
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search by name, email, or employee code"
+        disabled={disabled || isLoading}
+      />
       <div className="flex gap-2">
         <Select value={employeeId} onValueChange={setEmployeeId} disabled={disabled || isLoading}>
           <SelectTrigger>
             <SelectValue placeholder={isLoading ? "Loading employees..." : "Choose an employee"} />
           </SelectTrigger>
           <SelectContent>
-            {employees?.map((employee) => (
+            {filteredEmployees?.map((employee) => (
               <SelectItem key={employee.id} value={employee.id}>
                 {employee.first_name} {employee.last_name}
                 {employee.employee_code ? ` · ${employee.employee_code}` : ""}
@@ -110,6 +142,278 @@ function EmployeeSelector({
       {!isLoading && !isError && employees?.length === 0 && (
         <p className="text-xs text-muted-foreground">No employees are available.</p>
       )}
+      {!isLoading && !isError && employees?.length !== 0 && filteredEmployees?.length === 0 && (
+        <p className="text-xs text-muted-foreground">No employees match your search.</p>
+      )}
+    </form>
+  );
+}
+
+function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }) {
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(10);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = employees.filter((employee) =>
+    [
+      employee.full_name,
+      employee.email,
+      employee.employee_code,
+      employee.department,
+      employee.designation,
+    ].some((value) => String(value ?? "").toLowerCase().includes(normalizedSearch)),
+  );
+  const visible = filtered.slice(0, visibleCount);
+
+  return (
+    <div className="mt-3 space-y-2">
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search employees by name, email, code, or department"
+        aria-label="Search employee results"
+      />
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{filtered.length} employee{filtered.length === 1 ? "" : "s"}</span>
+        {filtered.length > visible.length && <span>Showing {visible.length}</span>}
+      </div>
+      <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
+        {visible.map((employee, index) => (
+          <div
+            key={String(employee.employee_id ?? index)}
+            className="rounded-lg bg-secondary/70 px-3 py-2 text-xs sm:flex sm:items-center sm:justify-between sm:gap-4"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-medium">{String(employee.full_name ?? "Employee")}</p>
+              <p className="truncate text-muted-foreground">{String(employee.email ?? "")}</p>
+            </div>
+            <div className="mt-1 shrink-0 text-muted-foreground sm:mt-0 sm:text-right">
+              {Boolean(employee.employee_code) && <p>{String(employee.employee_code)}</p>}
+              <p>{String(employee.department ?? "No department")}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {filtered.length === 0 && (
+        <p className="rounded-lg bg-secondary/70 px-3 py-4 text-center text-xs text-muted-foreground">
+          No employees match your search.
+        </p>
+      )}
+      {visible.length < filtered.length && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setVisibleCount((count) => count + 10)}
+        >
+          Show more
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function EmployeeUpdateForm({
+  employeeId,
+  disabled,
+  onRespond,
+}: {
+  employeeId: string;
+  disabled: boolean;
+  onRespond: Respond;
+}) {
+  const [changes, setChanges] = useState<Record<string, string>>({});
+  const { data: employee, isLoading, isError } = useEmployee(employeeId);
+  const initialValues = employee
+    ? Object.fromEntries(
+        UPDATE_FIELDS.map(({ name }) => [name, String(employee[name] ?? "")]),
+      )
+    : {};
+  const values = { ...initialValues, ...changes };
+
+  const updates: Record<string, string | null> = {};
+  for (const { name } of UPDATE_FIELDS) {
+    const current = (values[name] ?? "").trim();
+    const initial = (initialValues[name] ?? "").trim();
+    if (current !== initial) updates[name] = current || null;
+  }
+
+  const submitUpdates = (event: FormEvent) => {
+    event.preventDefault();
+    const fields = Object.keys(updates);
+    if (!fields.length) return;
+    onRespond(
+      "Update selected employee",
+      { updates },
+      `Update employee fields: ${fields.map((field) => field.replaceAll("_", " ")).join(", ")}`,
+    );
+  };
+
+  return (
+    <form onSubmit={submitUpdates} className="mt-3 space-y-3 border-t border-warning/20 pt-3">
+      <div>
+        <p className="text-xs font-medium text-primary">Employee changes</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Existing values are prefilled. Change any fields, then save them together.
+        </p>
+      </div>
+      {isLoading && <p className="text-xs text-muted-foreground">Loading employee details...</p>}
+      {isError && <p className="text-xs text-destructive">Could not load employee details.</p>}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {UPDATE_FIELDS.map((field) => (
+          <label key={field.name} className={field.name === "address" ? "sm:col-span-2" : ""}>
+            <span className="mb-1 block text-xs text-muted-foreground">{field.label}</span>
+            <Input
+              type={"type" in field ? field.type : "text"}
+              value={values[field.name] ?? ""}
+              onChange={(event) =>
+                setChanges((current) => ({ ...current, [field.name]: event.target.value }))
+              }
+              disabled={disabled || isLoading || isError}
+              required={["first_name", "last_name"].includes(field.name)}
+            />
+          </label>
+        ))}
+      </div>
+      <Button
+        size="sm"
+        type="submit"
+        disabled={disabled || isLoading || isError || !Object.keys(updates).length}
+      >
+        Save changes
+      </Button>
+    </form>
+  );
+}
+
+function LeaveApplicationForm({
+  disabled,
+  onRespond,
+}: {
+  disabled: boolean;
+  onRespond: Respond;
+}) {
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [dateError, setDateError] = useState("");
+  const { data: leaveTypes, isLoading: typesLoading } = useLeaveTypes();
+  const { data: balances, isLoading: balancesLoading } = useMyBalances();
+  const selectedType = leaveTypes?.find((type) => type.id === leaveTypeId);
+  const selectedBalance = balances?.find((balance) => balance.leave_type_id === leaveTypeId);
+
+  const submitLeave = (event: FormEvent) => {
+    event.preventDefault();
+    if (!leaveTypeId || !startDate || !endDate || !reason.trim()) return;
+    if (endDate < startDate) {
+      setDateError("End date cannot be before the start date.");
+      return;
+    }
+    const balanceYear = selectedBalance?.year;
+    if (
+      balanceYear &&
+      (Number(startDate.slice(0, 4)) !== balanceYear || Number(endDate.slice(0, 4)) !== balanceYear)
+    ) {
+      setDateError(`Your displayed leave balance is for ${balanceYear}. Choose dates in ${balanceYear}.`);
+      return;
+    }
+    setDateError("");
+    onRespond(
+      "Submit leave application",
+      {
+        leave_type_id: leaveTypeId,
+        start_date: startDate,
+        end_date: endDate,
+        reason: reason.trim(),
+      },
+      `Apply for ${selectedType?.name ?? "leave"}: ${startDate} to ${endDate}`,
+    );
+  };
+
+  const loading = typesLoading || balancesLoading;
+  return (
+    <form onSubmit={submitLeave} className="mt-3 space-y-3 border-t border-warning/20 pt-3">
+      <div>
+        <p className="text-xs font-medium text-primary">New leave request</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Complete the request below. You can review it before confirmation.
+        </p>
+      </div>
+      <label className="block">
+        <span className="mb-1 block text-xs text-muted-foreground">Leave type</span>
+        <Select value={leaveTypeId} onValueChange={setLeaveTypeId} disabled={disabled || loading}>
+          <SelectTrigger>
+            <SelectValue placeholder={loading ? "Loading leave balances..." : "Select leave type"} />
+          </SelectTrigger>
+          <SelectContent>
+            {leaveTypes?.map((type) => {
+              const balance = balances?.find((item) => item.leave_type_id === type.id);
+              return (
+                <SelectItem key={type.id} value={type.id}>
+                  {type.name} · {balance?.remaining_days ?? 0} days available
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </label>
+      {selectedBalance && (
+        <p className="rounded-md bg-secondary/70 px-3 py-2 text-xs text-muted-foreground">
+          {selectedBalance.remaining_days} of {selectedBalance.total_days} days remaining
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <label>
+          <span className="mb-1 block text-xs text-muted-foreground">Start date</span>
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+            disabled={disabled}
+            required
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-muted-foreground">End date</span>
+          <Input
+            type="date"
+            value={endDate}
+            min={startDate || undefined}
+            onChange={(event) => setEndDate(event.target.value)}
+            disabled={disabled}
+            required
+          />
+        </label>
+      </div>
+      <label className="block">
+        <span className="mb-1 block text-xs text-muted-foreground">Reason</span>
+        <Textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Why do you need leave?"
+          disabled={disabled}
+          required
+        />
+      </label>
+      {dateError && <p className="text-xs text-destructive">{dateError}</p>}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          type="submit"
+          disabled={disabled || loading || !leaveTypeId || !startDate || !endDate || !reason.trim()}
+        >
+          Review request
+        </Button>
+        <Button
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={() => onRespond("cancel")}
+          disabled={disabled}
+        >
+          Cancel
+        </Button>
+      </div>
     </form>
   );
 }
@@ -124,6 +428,7 @@ function PolicyUploader({
   onRespond: Respond;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState("");
   const uploadPolicy = useUploadPolicy();
   const title = String(parameters.title ?? "");
   const category = String(parameters.category ?? "");
@@ -131,12 +436,17 @@ function PolicyUploader({
   const submitPolicy = async (event: FormEvent) => {
     event.preventDefault();
     if (!file || !title || !category) return;
-    const document = await uploadPolicy.mutateAsync({ title, category, file });
-    onRespond(
-      "Policy upload completed",
-      { policy_file: "uploaded", document_id: document.id },
-      `Uploaded policy: ${document.title}`,
-    );
+    setUploadError("");
+    try {
+      const document = await uploadPolicy.mutateAsync({ title, category, file });
+      onRespond(
+        "Policy upload completed",
+        { policy_file: "uploaded", document_id: document.id },
+        `Uploaded policy: ${document.title}`,
+      );
+    } catch (error) {
+      setUploadError(requestErrorMessage(error, "Could not upload the policy."));
+    }
   };
 
   return (
@@ -152,11 +462,9 @@ function PolicyUploader({
       <p className="text-xs text-muted-foreground">
         {title} · {category}
       </p>
-      {uploadPolicy.isError && (
+      {uploadError && (
         <p className="text-xs text-destructive">
-          {uploadPolicy.error instanceof Error
-            ? uploadPolicy.error.message
-            : "Could not upload the policy."}
+          {uploadError}
         </p>
       )}
       <Button
@@ -195,7 +503,6 @@ export default function ToolResultCard({
   onRespond,
 }: ToolResultCardProps) {
   const [value, setValue] = useState("");
-  const [updateField, setUpdateField] = useState("first_name");
   const denied = result.status === "denied";
   const failed = result.status === "error";
   const waiting = ["needs_input", "confirmation_required"].includes(result.status);
@@ -229,17 +536,11 @@ export default function ToolResultCard({
     event.preventDefault();
     const normalized = value.trim();
     if (!normalized || !missingField || !onRespond) return;
-    if (missingField === "updates") {
-      onRespond(`Set ${updateField.replaceAll("_", " ")} to ${normalized}`, {
-        updates: { [updateField]: normalized },
-      });
-    } else {
-      onRespond(
-        normalized,
-        { [missingField]: normalized },
-        missingField === "password" ? "[Sensitive value provided]" : normalized,
-      );
-    }
+    onRespond(
+      normalized,
+      { [missingField]: normalized },
+      missingField === "password" ? "[Sensitive value provided]" : normalized,
+    );
     setValue("");
   };
 
@@ -307,23 +608,29 @@ export default function ToolResultCard({
           />
         )}
 
-      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file"].includes(missingField) && onRespond && (
+      {interactive &&
+        result.status === "needs_input" &&
+        missingField === "updates" &&
+        onRespond && (
+          <EmployeeUpdateForm
+            employeeId={String(pendingParameters.employee_id ?? "")}
+            disabled={disabled}
+            onRespond={onRespond}
+          />
+        )}
+
+      {interactive &&
+        result.status === "needs_input" &&
+        missingField === "leave_type_id" &&
+        onRespond && (
+          <LeaveApplicationForm disabled={disabled} onRespond={onRespond} />
+        )}
+
+      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file", "updates", "leave_type_id"].includes(missingField) && onRespond && (
         <form onSubmit={submitSlot} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
           <label className="block text-xs font-medium text-primary">
             {FIELD_LABELS[missingField] ?? "Required information"}
           </label>
-          {missingField === "updates" && (
-            <select
-              value={updateField}
-              onChange={(event) => setUpdateField(event.target.value)}
-              disabled={disabled}
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              {UPDATE_FIELDS.map(([field, label]) => (
-                <option key={field} value={field}>{label}</option>
-              ))}
-            </select>
-          )}
           <div className="flex gap-2">
             {missingField === "body" ? (
               <Textarea
@@ -368,17 +675,7 @@ export default function ToolResultCard({
       )}
 
       {employees.length > 0 && (
-        <div className="mt-3 space-y-1.5">
-          {employees.slice(0, 5).map((item, index) => {
-            const employee = isRecord(item) ? item : {};
-            return (
-              <div key={index} className="flex justify-between gap-3 rounded-lg bg-secondary/70 px-3 py-2 text-xs">
-                <span className="font-medium">{String(employee.full_name ?? "Employee")}</span>
-                <span className="truncate text-muted-foreground">{String(employee.email ?? "")}</span>
-              </div>
-            );
-          })}
-        </div>
+        <EmployeeResults employees={employees.map((item) => (isRecord(item) ? item : {}))} />
       )}
 
       {!balances.length && !employees.length && details.length > 0 && (

@@ -10,7 +10,7 @@ import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import { useAppSelector } from "@/store/hooks";
 import { usePolicies, useUploadPolicy } from "./usePolicies";
-import { getPolicyDownloadUrl, type PolicyDocument } from "./policyApi";
+import { downloadPolicyFile, type PolicyDocument } from "./policyApi";
 
 export default function PoliciesPage() {
   const role = useAppSelector((s) => s.auth.role);
@@ -38,9 +38,18 @@ export default function PoliciesPage() {
   const handleDownload = async (doc: PolicyDocument) => {
     setDownloadingId(doc.id);
     try {
-      // Backend hands out the Cloudinary URL as JSON; the browser fetches it
-      // directly with no auth header, so nothing leaks and nothing 401s.
-      window.open(await getPolicyDownloadUrl(doc.id), "_blank");
+      const blob = await downloadPolicyFile(doc.id);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeTitle = doc.title.replace(/[\\/:*?"<>|]+/g, "_").trim() || "policy";
+      link.href = objectUrl;
+      link.download = safeTitle.toLowerCase().endsWith(".pdf")
+        ? safeTitle
+        : `${safeTitle}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
     } finally {
       setDownloadingId(null);
     }
@@ -111,7 +120,7 @@ export default function PoliciesPage() {
                   disabled={downloadingId === d.id}
                   onClick={() => handleDownload(d)}
                 >
-                  {downloadingId === d.id ? "Opening..." : "Download"}
+                  {downloadingId === d.id ? "Downloading..." : "Download"}
                 </Button>
               ),
             },

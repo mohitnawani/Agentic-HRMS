@@ -81,7 +81,7 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
     elif tool == "list_employees":
         data = await list_employees(state, db)
         message = (
-            "Employees: " + ", ".join(item["full_name"] for item in data)
+            f"I found {len(data)} employees. Use the searchable list below to view them."
             if data
             else "No employees were found."
         )

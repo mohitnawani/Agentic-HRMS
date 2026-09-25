@@ -12,6 +12,7 @@ from app.agent.state import AgentRuntimeContext, AgentState, AgentToolResult
 from app.agent.tools.write_tools import (
     WriteToolAccessDenied,
     WriteToolConflict,
+    apply_leave,
     approve_leave,
     authorize_write_tool,
     complete_policy_upload,
@@ -25,6 +26,7 @@ from app.agent.tools.write_tools import (
 from app.schemas.announcement import AnnouncementCreate
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
+from app.schemas.leave import LeaveRequestCreate
 
 ActionToolName = Literal[
     "create_employee",
@@ -35,6 +37,7 @@ ActionToolName = Literal[
     "create_department",
     "create_announcement",
     "upload_policy",
+    "apply_leave",
 ]
 
 UUID_PATTERN = re.compile(
@@ -50,6 +53,7 @@ SENSITIVE_ACTIONS = {
     "approve_leave",
     "reject_leave",
     "create_announcement",
+    "apply_leave",
 }
 
 REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
@@ -67,6 +71,7 @@ REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
     "create_department": ("name",),
     "create_announcement": ("title", "body"),
     "upload_policy": ("title", "category", "policy_file", "document_id"),
+    "apply_leave": ("leave_type_id", "start_date", "end_date", "reason"),
 }
 
 FIELD_PROMPTS = {
@@ -83,20 +88,31 @@ FIELD_PROMPTS = {
     "body": "What should the announcement say?",
     "category": "What category should this policy use?",
     "policy_file": "Choose the PDF policy file to upload.",
+    "leave_type_id": "Which leave type would you like to use?",
+    "start_date": "What is the leave start date? Please use YYYY-MM-DD.",
+    "end_date": "What is the leave end date? Please use YYYY-MM-DD.",
+    "reason": "What is the reason for your leave?",
 }
 
 
 def select_action_tool(message: str) -> ActionToolName | None:
     normalized = " ".join(message.lower().split())
     patterns: tuple[tuple[str, ActionToolName], ...] = (
-        (r"\b(create|add)\b.*\bemployee\b", "create_employee"),
-        (r"\b(update|change|edit)\b.*\bemployee\b", "update_employee"),
-        (r"\b(delete|remove)\b.*\bemployee\b", "delete_employee"),
+        (r"\b(create|add)\b.*\b(employees?|users?)\b", "create_employee"),
+        (r"\b(update|change|edit)\b.*\b(employees?|users?)\b", "update_employee"),
+        (r"\b(delete|remove)\b.*\b(employees?|users?)\b", "delete_employee"),
         (r"\bapprove\b.*\bleave\b", "approve_leave"),
         (r"\breject\b.*\bleave\b", "reject_leave"),
-        (r"\b(create|add)\b.*\bdepartment\b", "create_department"),
-        (r"\b(create|add|post|publish)\b.*\bannouncement\b", "create_announcement"),
-        (r"\b(upload|add|create)\b.*\b(policy|document)\b", "upload_policy"),
+        (r"\bapply\b.*\bleave\b", "apply_leave"),
+        (r"\b(create|add)\b.*\bdepartments?\b", "create_department"),
+        (
+            r"\b(create|add|post|publish)\b.*\bannouncements?\b",
+            "create_announcement",
+        ),
+        (
+            r"\b(upload|add|create)\b.*\b(policies|policy|documents?)\b",
+            "upload_policy",
+        ),
     )
     for pattern, tool in patterns:
         if re.search(pattern, normalized):
@@ -240,6 +256,10 @@ def _pending_result(
             "title": payload.get("title", ""),
             "category": payload.get("category", ""),
         }
+    elif tool == "update_employee" and missing_field == "updates":
+        interaction["parameters"] = {
+            "employee_id": payload.get("employee_id", ""),
+        }
     return (
         {
             "agent": "action",
@@ -258,11 +278,18 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
             "This is a bulk destructive request. No records have been changed. "
             "Reply 'confirm' to continue or 'cancel' to stop."
         )
+    if tool == "apply_leave":
+        return (
+            f"Please confirm your leave request from {payload.get('start_date')} to "
+            f"{payload.get('end_date')} for: {payload.get('reason')}. "
+            "No request has been submitted yet. Reply 'confirm' or 'cancel'."
+        )
     labels = {
         "delete_employee": "delete this employee",
         "approve_leave": "approve this leave request",
         "reject_leave": "reject this leave request",
         "create_announcement": "publish this announcement",
+        "apply_leave": "submit this leave request",
     }
     return (
         f"Please confirm that you want to {labels[tool]}. "
@@ -282,6 +309,7 @@ def _execution_state(
         "create_department": "Create department",
         "create_announcement": "Create announcement",
         "upload_policy": "Upload policy",
+        "apply_leave": "Apply for leave",
     }
     return {**state, "message": messages[tool], "action_payload": payload}
 
@@ -329,6 +357,11 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             state, db, _target_id(state, "document_id")
         )
         message = f"Uploaded and indexed policy {data['title']}."
+    elif tool == "apply_leave":
+        data = await apply_leave(
+            state, db, LeaveRequestCreate.model_validate(payload)
+        )
+        message = "Your leave request was submitted and is pending approval."
     else:
         data = await create_department(state, db, _department_data(state))
         message = f"Created department {data['name']}."
@@ -346,6 +379,10 @@ async def handle_action(
 ) -> tuple[AgentToolResult, dict[str, object] | None, bool]:
     """Collect missing slots, gate sensitive actions, then execute."""
     pending = state.get("pending_action")
+    if pending and select_action_tool(state["message"]) is not None:
+        # A clear new action request replaces an abandoned pending action instead
+        # of being interpreted as a slot value or confirm/cancel response.
+        pending = None
     sanitized = False
     if pending:
         raw_tool = pending.get("tool")
@@ -358,18 +395,18 @@ async def handle_action(
         await authorize_write_tool(state, db, tool)
         stage = pending.get("stage")
         answer = " ".join(state["message"].lower().split())
+        if answer in CANCELLATION_WORDS:
+            return (
+                {
+                    "agent": "action",
+                    "status": "cancelled",
+                    "tool": tool,
+                    "message": "Action cancelled. No changes were made.",
+                },
+                None,
+                False,
+            )
         if stage == "confirmation":
-            if answer in CANCELLATION_WORDS:
-                return (
-                    {
-                        "agent": "action",
-                        "status": "cancelled",
-                        "tool": tool,
-                        "message": "Action cancelled. No changes were made.",
-                    },
-                    None,
-                    False,
-                )
             if answer not in CONFIRMATION_WORDS:
                 result, unchanged = _pending_result(
                     tool,
@@ -453,6 +490,10 @@ async def action_agent_node(
         }
         pending_action = None
     except (WriteToolConflict, ValidationError, HTTPException) as exc:
+        if pending_action and pending_action.get("stage") == "confirmation":
+            # Execution was attempted and failed. Do not trap the next user
+            # message inside a confirmation that can no longer succeed.
+            pending_action = None
         if isinstance(exc, ValidationError):
             fields = sorted(
                 {".".join(map(str, error["loc"])) for error in exc.errors()}

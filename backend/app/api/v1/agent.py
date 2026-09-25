@@ -43,22 +43,27 @@ async def get_agent_conversation(
     raw_pending = conversation.pending_action
     pending = None
     if raw_pending:
+        raw_parameters = raw_pending.get("parameters", {})
+        safe_parameters: dict[str, object] = {}
+        if isinstance(raw_parameters, dict):
+            allowed_keys = (
+                ("title", "category")
+                if raw_pending.get("tool") == "upload_policy"
+                else ("employee_id",)
+                if raw_pending.get("tool") == "update_employee"
+                else ()
+            )
+            safe_parameters = {
+                key: raw_parameters[key]
+                for key in allowed_keys
+                if raw_parameters.get(key)
+            }
         pending = AgentPendingInteraction.model_validate(
             {
                 "tool": raw_pending.get("tool", "unknown"),
                 "stage": raw_pending.get("stage", "slots"),
                 "missing_field": raw_pending.get("missing_field"),
-                **(
-                    {
-                        "parameters": {
-                            key: raw_pending.get("parameters", {}).get(key)
-                            for key in ("title", "category")
-                            if raw_pending.get("parameters", {}).get(key)
-                        }
-                    }
-                    if raw_pending.get("tool") == "upload_policy"
-                    else {}
-                ),
+                **({"parameters": safe_parameters} if safe_parameters else {}),
             }
         )
     return AgentConversationResponse(

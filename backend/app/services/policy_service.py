@@ -45,10 +45,6 @@ async def upload_policy(
     uploaded_by: uuid.UUID,
     file: UploadFile,
 ) -> PolicyDocument:
-    if file.content_type != "application/pdf":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files allowed"
-        )
     _ensure_configured()
 
     contents = await file.read()

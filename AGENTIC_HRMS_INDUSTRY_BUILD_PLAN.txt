@@ -258,7 +258,7 @@ TASKS:
     Database Agent / Action Agent / Response Generator, shared state design
     (user_id, role, history, intent, tool results).
 DONE-WHEN:
-  [ ] RAG eval passes 8+/10; graph compiles and routes correctly to stubs
+  [x] RAG eval passes 8+/10; graph compiles and routes correctly to stubs
 
 DAY 17 — Database Agent + RAG Agent wired in
 TASKS:

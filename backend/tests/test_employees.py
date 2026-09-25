@@ -24,9 +24,13 @@ async def test_create_and_fetch_employee(client, admin_token):
 
 
 @pytest.mark.asyncio
-async def test_upload_employee_photo(client, admin_token):
-    import cloudinary.uploader
-
+async def test_upload_employee_photo(client, admin_token, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.v1.employees.cloudinary.uploader.upload",
+        lambda *args, **kwargs: {
+            "secure_url": "https://res.cloudinary.com/test/image/upload/avatar.png",
+        },
+    )
     headers = {"Authorization": f"Bearer {admin_token}"}
     email = f"photo_{uuid.uuid4().hex[:6]}@example.com"
     created = await client.post("/api/v1/employees", json={
@@ -57,8 +61,6 @@ async def test_upload_employee_photo(client, admin_token):
     assert good.status_code == 200
     assert good.json()["photo_url"].startswith("https://")
 
-    public_id = good.json()["photo_url"].rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    cloudinary.uploader.destroy(f"hrms/employees/{public_id}", resource_type="image")
     assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
 
 
@@ -109,7 +111,7 @@ async def test_hr_delete_rules(client, admin_token, employee_token):
     assert (await client.delete(f"/api/v1/employees/{own_profile}", headers=h_hr)).status_code == 403
 
     # HR cannot delete another HR's profile; admin can delete anyone
-    h_hr2, hr2_email = await _hr_headers(client, admin_token)
+    _h_hr2, hr2_email = await _hr_headers(client, admin_token)
     hr2_profile = await _profile_id_for_email(client, admin_token, hr2_email)
     assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_hr)).status_code == 403
     assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_admin)).status_code == 204

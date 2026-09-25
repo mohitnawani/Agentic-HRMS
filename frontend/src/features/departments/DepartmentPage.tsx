@@ -47,6 +47,8 @@ export default function DepartmentPage() {
       <DataTable
         rowKey={(d: Department) => d.id}
         data={departments ?? []}
+        searchableText={(d) => `${d.name} ${d.description ?? ""}`}
+        searchPlaceholder="Search departments..."
         columns={[
           { header: "Name", render: (d) => d.name },
           { header: "Description", render: (d) => d.description ?? "—" },

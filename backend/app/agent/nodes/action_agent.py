@@ -15,11 +15,13 @@ from app.agent.tools.write_tools import (
     apply_leave,
     approve_leave,
     authorize_write_tool,
+    cancel_leave,
     complete_policy_upload,
     create_announcement,
     create_department,
     create_employee,
     delete_employee,
+    record_attendance_action,
     reject_leave,
     update_employee,
 )
@@ -38,6 +40,9 @@ ActionToolName = Literal[
     "create_announcement",
     "upload_policy",
     "apply_leave",
+    "cancel_leave",
+    "check_in",
+    "check_out",
 ]
 
 UUID_PATTERN = re.compile(
@@ -54,6 +59,7 @@ SENSITIVE_ACTIONS = {
     "reject_leave",
     "create_announcement",
     "apply_leave",
+    "cancel_leave",
 }
 
 REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
@@ -72,6 +78,9 @@ REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
     "create_announcement": ("title", "body"),
     "upload_policy": ("title", "category", "policy_file", "document_id"),
     "apply_leave": ("leave_type_id", "start_date", "end_date", "reason"),
+    "cancel_leave": ("request_id",),
+    "check_in": (),
+    "check_out": (),
 }
 
 FIELD_PROMPTS = {
@@ -104,6 +113,9 @@ def select_action_tool(message: str) -> ActionToolName | None:
         (r"\bapprove\b.*\bleave\b", "approve_leave"),
         (r"\breject\b.*\bleave\b", "reject_leave"),
         (r"\bapply\b.*\bleave\b", "apply_leave"),
+        (r"\bcancel\b.*\bleave\b", "cancel_leave"),
+        (r"\bcheck[ -]?in\b", "check_in"),
+        (r"\bcheck[ -]?out\b", "check_out"),
         (r"\b(create|add)\b.*\bdepartments?\b", "create_department"),
         (
             r"\b(create|add|post|publish)\b.*\bannouncements?\b",
@@ -155,7 +167,7 @@ def _extract_initial_payload(
     uuid_match = UUID_PATTERN.search(message)
     if uuid_match and tool in {"update_employee", "delete_employee"}:
         payload.setdefault("employee_id", uuid_match.group())
-    if uuid_match and tool in {"approve_leave", "reject_leave"}:
+    if uuid_match and tool in {"approve_leave", "reject_leave", "cancel_leave"}:
         payload.setdefault("request_id", uuid_match.group())
 
     if tool == "create_employee":
@@ -290,6 +302,7 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         "reject_leave": "reject this leave request",
         "create_announcement": "publish this announcement",
         "apply_leave": "submit this leave request",
+        "cancel_leave": "cancel this leave request",
     }
     return (
         f"Please confirm that you want to {labels[tool]}. "
@@ -310,6 +323,9 @@ def _execution_state(
         "create_announcement": "Create announcement",
         "upload_policy": "Upload policy",
         "apply_leave": "Apply for leave",
+        "cancel_leave": "Cancel leave request",
+        "check_in": "Check in",
+        "check_out": "Check out",
     }
     return {**state, "message": messages[tool], "action_payload": payload}
 
@@ -362,6 +378,16 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             state, db, LeaveRequestCreate.model_validate(payload)
         )
         message = "Your leave request was submitted and is pending approval."
+    elif tool == "cancel_leave":
+        data = await cancel_leave(state, db, _target_id(state, "request_id"))
+        message = "Your leave request was cancelled."
+    elif tool in {"check_in", "check_out"}:
+        data = await record_attendance_action(state, db, tool)
+        message = (
+            "Checked in successfully."
+            if tool == "check_in"
+            else "Checked out successfully."
+        )
     else:
         data = await create_department(state, db, _department_data(state))
         message = f"Created department {data['name']}."
@@ -477,6 +503,10 @@ async def action_agent_node(
     state: AgentState, runtime: Runtime[AgentRuntimeContext]
 ) -> dict:
     pending_action: dict[str, object] | None = state.get("pending_action")
+    selected_tool = select_action_tool(state["message"])
+    attempted_tool = selected_tool or (
+        pending_action.get("tool") if pending_action else None
+    )
     sanitized = False
     try:
         result, pending_action, sanitized = await handle_action(
@@ -486,6 +516,7 @@ async def action_agent_node(
         result = {
             "agent": "action",
             "status": "denied",
+            "tool": str(attempted_tool or "unknown"),
             "message": str(exc),
         }
         pending_action = None
@@ -506,6 +537,7 @@ async def action_agent_node(
         result = {
             "agent": "action",
             "status": "error",
+            "tool": str(attempted_tool or "unknown"),
             "message": detail,
         }
     output: dict[str, object] = {

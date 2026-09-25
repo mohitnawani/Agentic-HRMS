@@ -71,6 +71,8 @@ export default function HolidaysPage() {
           rowKey={(h: Holiday) => h.id}
           data={holidays ?? []}
           emptyTitle="No holidays yet"
+          searchableText={(h) => `${h.name} ${h.date}`}
+          searchPlaceholder="Search holidays by name or date..."
           columns={[
             { header: "Name", render: (h) => h.name },
             { header: "Date", render: (h) => h.date },

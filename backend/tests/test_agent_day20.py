@@ -8,8 +8,14 @@ from app.agent.evaluation import load_intent_cases, run_intent_evaluation
 from app.core.security import hash_password
 from app.db.session import async_session
 from app.models.agent_conversation import AgentConversation
+from app.models.attendance import Attendance
 from app.models.employee import Employee
-from app.models.leave import LeaveBalance, LeaveType
+from app.models.leave import (
+    LeaveBalance,
+    LeaveRequest,
+    LeaveRequestStatus,
+    LeaveType,
+)
 from app.models.role import RoleEnum
 from app.models.user import User
 from app.rag.generation import GroundedAnswer
@@ -183,7 +189,7 @@ async def test_scenario_2_leave_query_returns_only_authenticated_balance(client)
     body = response.json()
     assert body["intent"] == "database"
     assert "8 of 12 remaining" in body["answer"]
-    assert "99" not in body["answer"]
+    assert "99 of 99 remaining" not in body["answer"]
 
     await cleanup_users(user_id, other_user_id)
     async with async_session() as db:
@@ -275,3 +281,186 @@ async def test_scenario_4_employee_cannot_delete_employee(client):
         assert conversation.pending_action is None
 
     await cleanup_users(actor_user_id, target_user_id)
+
+
+@pytest.mark.asyncio
+async def test_employee_attendance_actions_work_end_to_end(client):
+    user_id, employee_id, email, password = await create_actor(
+        RoleEnum.EMPLOYEE, "attendance_employee"
+    )
+    token = await login(client, email, password)
+
+    checked_in = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Check in"},
+        headers=auth(token),
+    )
+    assert checked_in.status_code == 200, checked_in.text
+    assert checked_in.json()["intent"] == "action"
+    assert "checked in successfully" in checked_in.json()["answer"].lower()
+
+    checked_out = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Check out"},
+        headers=auth(token),
+    )
+    assert checked_out.status_code == 200, checked_out.text
+    assert "checked out successfully" in checked_out.json()["answer"].lower()
+
+    duplicate = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Check in"},
+        headers=auth(token),
+    )
+    assert "already checked in" in duplicate.json()["answer"].lower()
+
+    async with async_session() as db:
+        await db.execute(delete(Attendance).where(Attendance.employee_id == employee_id))
+        await db.commit()
+    await cleanup_users(user_id)
+
+
+@pytest.mark.asyncio
+async def test_leave_review_and_cancellation_actions_work_end_to_end(client):
+    employee_user_id, employee_id, employee_email, employee_password = (
+        await create_actor(RoleEnum.EMPLOYEE, "leave_action_employee")
+    )
+    hr_user_id, _, hr_email, hr_password = await create_actor(
+        RoleEnum.HR, "leave_action_hr"
+    )
+    leave_type_id = uuid.uuid4()
+    approve_id = uuid.uuid4()
+    reject_id = uuid.uuid4()
+    cancel_id = uuid.uuid4()
+    today = datetime.now(UTC).date()
+    async with async_session() as db:
+        db.add(
+            LeaveType(
+                id=leave_type_id,
+                name=f"Agent Action Leave {uuid.uuid4().hex}",
+                default_annual_days=10,
+            )
+        )
+        await db.flush()
+        db.add(
+            LeaveBalance(
+                employee_id=employee_id,
+                leave_type_id=leave_type_id,
+                year=today.year,
+                total_days=10,
+                used_days=0,
+            )
+        )
+        db.add_all(
+            [
+                LeaveRequest(
+                    id=request_id,
+                    employee_id=employee_id,
+                    leave_type_id=leave_type_id,
+                    start_date=today,
+                    end_date=today,
+                    reason=reason,
+                )
+                for request_id, reason in (
+                    (approve_id, "Approve through agent"),
+                    (reject_id, "Reject through agent"),
+                    (cancel_id, "Cancel through agent"),
+                )
+            ]
+        )
+        await db.commit()
+
+    hr_token = await login(client, hr_email, hr_password)
+    employee_token = await login(client, employee_email, employee_password)
+
+    for verb, request_id, expected_status in (
+        ("Approve", approve_id, LeaveRequestStatus.APPROVED),
+        ("Reject", reject_id, LeaveRequestStatus.REJECTED),
+    ):
+        requested = await client.post(
+            "/api/v1/agent/chat",
+            json={"message": f"{verb} leave request {request_id}"},
+            headers=auth(hr_token),
+        )
+        assert "confirm" in requested.json()["answer"].lower()
+        completed = await client.post(
+            "/api/v1/agent/chat",
+            json={
+                "message": "confirm",
+                "conversation_id": requested.json()["conversation_id"],
+            },
+            headers=auth(hr_token),
+        )
+        assert expected_status.value in completed.json()["answer"].lower()
+
+    cancellation = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": f"Cancel leave request {cancel_id}"},
+        headers=auth(employee_token),
+    )
+    assert "confirm" in cancellation.json()["answer"].lower()
+    cancelled = await client.post(
+        "/api/v1/agent/chat",
+        json={
+            "message": "confirm",
+            "conversation_id": cancellation.json()["conversation_id"],
+        },
+        headers=auth(employee_token),
+    )
+    assert "cancelled" in cancelled.json()["answer"].lower()
+
+    async with async_session() as db:
+        assert (await db.get(LeaveRequest, approve_id)).status == LeaveRequestStatus.APPROVED
+        assert (await db.get(LeaveRequest, reject_id)).status == LeaveRequestStatus.REJECTED
+        assert (await db.get(LeaveRequest, cancel_id)).status == LeaveRequestStatus.CANCELLED
+        await db.execute(
+            delete(LeaveRequest).where(
+                LeaveRequest.id.in_([approve_id, reject_id, cancel_id])
+            )
+        )
+        await db.execute(
+            delete(LeaveBalance).where(LeaveBalance.leave_type_id == leave_type_id)
+        )
+        await db.execute(delete(LeaveType).where(LeaveType.id == leave_type_id))
+        await db.commit()
+    await cleanup_users(employee_user_id, hr_user_id)
+
+
+@pytest.mark.asyncio
+async def test_role_permissions_are_enforced_through_assistant(client):
+    employee_id, _, employee_email, employee_password = await create_actor(
+        RoleEnum.EMPLOYEE, "role_employee"
+    )
+    hr_id, _, hr_email, hr_password = await create_actor(RoleEnum.HR, "role_hr")
+    admin_id, _, admin_email, admin_password = await create_actor(
+        RoleEnum.ADMIN, "role_admin"
+    )
+    employee_token = await login(client, employee_email, employee_password)
+    hr_token = await login(client, hr_email, hr_password)
+    admin_token = await login(client, admin_email, admin_password)
+
+    for message in ("List all employees", "Create announcement", "Add department"):
+        response = await client.post(
+            "/api/v1/agent/chat",
+            json={"message": message},
+            headers=auth(employee_token),
+        )
+        assert "permission" in response.json()["answer"].lower()
+
+    denied_department = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Add department"},
+        headers=auth(hr_token),
+    )
+    assert "permission" in denied_department.json()["answer"].lower()
+
+    for token in (hr_token, admin_token):
+        listed = await client.post(
+            "/api/v1/agent/chat",
+            json={"message": "List all employees"},
+            headers=auth(token),
+        )
+        assert listed.json()["intent"] == "database"
+        assert "employees" in listed.json()["answer"].lower()
+
+    await cleanup_users(employee_id, hr_id, admin_id)

@@ -19,7 +19,7 @@ from app.schemas.announcement import AnnouncementCreate
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 from app.schemas.leave import LeaveRequestCreate
-from app.services import employee_service, leave_service
+from app.services import attendance_service, employee_service, leave_service
 
 
 class WriteToolAccessDenied(PermissionError):
@@ -40,6 +40,9 @@ ACTION_PERMISSIONS = {
     "create_announcement": "announcement:write",
     "upload_policy": "policy:write",
     "apply_leave": "leave:apply",
+    "cancel_leave": "leave:apply",
+    "check_in": "attendance:check_in_out",
+    "check_out": "attendance:check_in_out",
 }
 
 
@@ -169,6 +172,44 @@ async def apply_leave(
         "status": request.status.value,
         "start_date": request.start_date.isoformat(),
         "end_date": request.end_date.isoformat(),
+    }
+
+
+async def cancel_leave(
+    state: AgentState, db: AsyncSession, request_id: uuid.UUID
+) -> dict[str, object]:
+    actor = await authorize_write_tool(state, db, "cancel_leave")
+    employee = await db.scalar(select(Employee).where(Employee.user_id == actor.id))
+    if employee is None:
+        raise WriteToolConflict("No employee profile is linked to your account.")
+    try:
+        request = await leave_service.cancel_leave(db, request_id, employee.id)
+    except HTTPException as exc:
+        raise _translate_service_error(exc) from exc
+    return {"request_id": str(request.id), "status": request.status.value}
+
+
+async def record_attendance_action(
+    state: AgentState, db: AsyncSession, tool: str
+) -> dict[str, object]:
+    actor = await authorize_write_tool(state, db, tool)
+    employee = await db.scalar(select(Employee).where(Employee.user_id == actor.id))
+    if employee is None:
+        raise WriteToolConflict("No employee profile is linked to your account.")
+    try:
+        record = (
+            await attendance_service.check_in(db, employee.id)
+            if tool == "check_in"
+            else await attendance_service.check_out(db, employee.id)
+        )
+    except HTTPException as exc:
+        raise _translate_service_error(exc) from exc
+    return {
+        "attendance_id": str(record.id),
+        "date": record.date.isoformat(),
+        "status": record.status.value,
+        "check_in": record.check_in.isoformat() if record.check_in else None,
+        "check_out": record.check_out.isoformat() if record.check_out else None,
     }
 
 

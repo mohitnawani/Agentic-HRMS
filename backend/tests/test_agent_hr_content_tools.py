@@ -24,6 +24,9 @@ def auth(token: str) -> dict[str, str]:
         ("update employee", "update_employee"),
         ("delete user", "delete_employee"),
         ("Apply for leave", "apply_leave"),
+        ("cancel leave", "cancel_leave"),
+        ("check in", "check_in"),
+        ("check-out", "check_out"),
     ],
 )
 def test_action_tool_accepts_common_hr_phrases(message, expected):

@@ -1,6 +1,14 @@
 import { useState, type FormEvent } from "react";
 import axios from "axios";
-import { CheckCircle2, CircleAlert, Database, FileSearch, ShieldAlert } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Database,
+  FileSearch,
+  ShieldAlert,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +22,13 @@ import {
 } from "@/components/ui/select";
 import { useEmployee, useEmployees } from "@/features/employees/useEmployees";
 import { useUploadPolicy } from "@/features/policies/usePolicies";
-import { useLeaveTypes, useMyBalances } from "@/features/leave/useLeave";
+import {
+  useLeaveTypes,
+  useMyBalances,
+  useMyRequests,
+  usePendingRequests,
+} from "@/features/leave/useLeave";
+import type { LeaveRequest } from "@/features/leave/leaveApi";
 import { cn } from "@/lib/utils";
 import type { AgentToolResult } from "./agentTypes";
 
@@ -33,6 +47,9 @@ const TOOL_LABELS: Record<string, string> = {
   create_announcement: "Create announcement",
   upload_policy: "Upload policy",
   apply_leave: "Apply for leave",
+  cancel_leave: "Cancel leave",
+  check_in: "Check in",
+  check_out: "Check out",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -151,7 +168,8 @@ function EmployeeSelector({
 
 function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }) {
   const [search, setSearch] = useState("");
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const normalizedSearch = search.trim().toLowerCase();
   const filtered = employees.filter((employee) =>
     [
@@ -162,19 +180,29 @@ function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }
       employee.designation,
     ].some((value) => String(value ?? "").toLowerCase().includes(normalizedSearch)),
   );
-  const visible = filtered.slice(0, visibleCount);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const activePage = Math.min(page, totalPages);
+  const startIndex = (activePage - 1) * pageSize;
+  const visible = filtered.slice(startIndex, startIndex + pageSize);
 
   return (
     <div className="mt-3 space-y-2">
       <Input
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setPage(1);
+        }}
         placeholder="Search employees by name, email, code, or department"
         aria-label="Search employee results"
       />
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{filtered.length} employee{filtered.length === 1 ? "" : "s"}</span>
-        {filtered.length > visible.length && <span>Showing {visible.length}</span>}
+        {filtered.length > 0 && (
+          <span>
+            Showing {startIndex + 1}–{Math.min(startIndex + pageSize, filtered.length)}
+          </span>
+        )}
       </div>
       <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
         {visible.map((employee, index) => (
@@ -198,15 +226,32 @@ function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }
           No employees match your search.
         </p>
       )}
-      {visible.length < filtered.length && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setVisibleCount((count) => count + 10)}
-        >
-          Show more
-        </Button>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-2">
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label="Previous employee page"
+            disabled={activePage === 1}
+            onClick={() => setPage(activePage - 1)}
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </Button>
+          <span className="min-w-20 text-center text-xs text-muted-foreground">
+            Page {activePage} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label="Next employee page"
+            disabled={activePage === totalPages}
+            onClick={() => setPage(activePage + 1)}
+          >
+            <ChevronRight className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -418,6 +463,117 @@ function LeaveApplicationForm({
   );
 }
 
+function LeaveRequestPicker({
+  requests,
+  employeeNames,
+  loading,
+  disabled,
+  onRespond,
+}: {
+  requests: LeaveRequest[];
+  employeeNames?: Map<string, string>;
+  loading: boolean;
+  disabled: boolean;
+  onRespond: Respond;
+}) {
+  const [requestId, setRequestId] = useState("");
+  const [search, setSearch] = useState("");
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = requests.filter((request) =>
+    [
+      employeeNames?.get(request.employee_id),
+      request.start_date,
+      request.end_date,
+      request.reason,
+    ].some((value) => String(value ?? "").toLowerCase().includes(normalizedSearch)),
+  );
+  const selected = requests.find((request) => request.id === requestId);
+
+  const submitRequest = (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected) return;
+    onRespond(
+      selected.id,
+      { request_id: selected.id },
+      `Selected leave request: ${selected.start_date} to ${selected.end_date}`,
+    );
+  };
+
+  return (
+    <form onSubmit={submitRequest} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
+      <label className="block text-xs font-medium text-primary">Select leave request</label>
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search by employee, date, or reason"
+        disabled={disabled || loading}
+      />
+      <div className="flex gap-2">
+        <Select value={requestId} onValueChange={setRequestId} disabled={disabled || loading}>
+          <SelectTrigger>
+            <SelectValue placeholder={loading ? "Loading requests..." : "Choose a pending request"} />
+          </SelectTrigger>
+          <SelectContent>
+            {filtered.map((request) => (
+              <SelectItem key={request.id} value={request.id}>
+                {employeeNames?.get(request.employee_id)
+                  ? `${employeeNames.get(request.employee_id)} · `
+                  : ""}
+                {request.start_date} to {request.end_date} · {request.reason}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button size="sm" type="submit" disabled={disabled || !requestId}>
+          Continue
+        </Button>
+      </div>
+      {!loading && filtered.length === 0 && (
+        <p className="text-xs text-muted-foreground">No pending leave requests found.</p>
+      )}
+      <Button
+        size="sm"
+        type="button"
+        variant="outline"
+        onClick={() => onRespond("cancel")}
+        disabled={disabled}
+      >
+        Cancel
+      </Button>
+    </form>
+  );
+}
+
+function OwnLeaveRequestSelector(props: { disabled: boolean; onRespond: Respond }) {
+  const { data, isLoading } = useMyRequests();
+  return (
+    <LeaveRequestPicker
+      requests={(data ?? []).filter((request) => request.status === "pending")}
+      loading={isLoading}
+      {...props}
+    />
+  );
+}
+
+function PendingLeaveRequestSelector(props: { disabled: boolean; onRespond: Respond }) {
+  const { data: requests, isLoading: requestsLoading } = usePendingRequests();
+  const { data: employees, isLoading: employeesLoading } = useEmployees();
+  const employeeNames = new Map(
+    (employees ?? []).map((employee) => [
+      employee.id,
+      `${employee.first_name} ${employee.last_name}`,
+    ]),
+  );
+  return (
+    <LeaveRequestPicker
+      requests={requests ?? []}
+      employeeNames={employeeNames}
+      loading={requestsLoading || employeesLoading}
+      {...props}
+    />
+  );
+}
+
 function PolicyUploader({
   parameters,
   disabled,
@@ -626,7 +782,17 @@ export default function ToolResultCard({
           <LeaveApplicationForm disabled={disabled} onRespond={onRespond} />
         )}
 
-      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file", "updates", "leave_type_id"].includes(missingField) && onRespond && (
+      {interactive &&
+        result.status === "needs_input" &&
+        missingField === "request_id" &&
+        onRespond &&
+        (result.tool === "cancel_leave" ? (
+          <OwnLeaveRequestSelector disabled={disabled} onRespond={onRespond} />
+        ) : (
+          <PendingLeaveRequestSelector disabled={disabled} onRespond={onRespond} />
+        ))}
+
+      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file", "updates", "leave_type_id", "request_id"].includes(missingField) && onRespond && (
         <form onSubmit={submitSlot} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
           <label className="block text-xs font-medium text-primary">
             {FIELD_LABELS[missingField] ?? "Required information"}

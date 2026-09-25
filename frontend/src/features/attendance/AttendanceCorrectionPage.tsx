@@ -14,10 +14,21 @@ import type { AttendanceRecord } from "./attendanceApi";
 export default function AttendanceCorrectionPage() {
   const { data: employees } = useEmployees();
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const { data: history, isLoading } = useEmployeeHistory(selectedEmployeeId);
   const [editing, setEditing] = useState<AttendanceRecord | null>(null);
   const [reason, setReason] = useState("");
   const correctAttendance = useCorrectAttendance();
+  const normalizedEmployeeSearch = employeeSearch.trim().toLowerCase();
+  const filteredEmployees = employees?.filter((employee) =>
+    [
+      employee.first_name,
+      employee.last_name,
+      `${employee.first_name} ${employee.last_name}`,
+      employee.email,
+      employee.employee_code ?? "",
+    ].some((value) => value.toLowerCase().includes(normalizedEmployeeSearch)),
+  );
 
   const handleSave = () => {
     if (!editing) return;
@@ -31,16 +42,27 @@ export default function AttendanceCorrectionPage() {
     <div>
       <PageHeader title="Attendance Correction" description="Select an employee to view and correct their records" />
 
-      <div className="max-w-xs mb-6">
-        <Label>Employee</Label>
+      <div className="mb-6 max-w-md space-y-2 rounded-xl border border-border bg-card p-4 shadow-sm">
+        <Label htmlFor="attendance-employee-search">Employee</Label>
+        <Input
+          id="attendance-employee-search"
+          value={employeeSearch}
+          onChange={(event) => setEmployeeSearch(event.target.value)}
+          placeholder="Search by name, email, or employee code"
+        />
         <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
           <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
           <SelectContent>
-            {employees?.map((e) => (
-              <SelectItem key={e.id} value={e.id}>{e.first_name} {e.last_name}</SelectItem>
+            {filteredEmployees?.map((e) => (
+              <SelectItem key={e.id} value={e.id}>
+                {e.first_name} {e.last_name} · {e.email}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {filteredEmployees?.length === 0 && (
+          <p className="text-xs text-muted-foreground">No employees match your search.</p>
+        )}
       </div>
 
       {selectedEmployeeId && isLoading && <LoadingSkeleton rows={4} />}
@@ -49,6 +71,8 @@ export default function AttendanceCorrectionPage() {
         <DataTable
           rowKey={(r: AttendanceRecord) => r.id}
           data={history}
+          searchableText={(r) => `${r.date} ${r.status}`}
+          searchPlaceholder="Search attendance by date or status..."
           columns={[
             { header: "Date", render: (r) => r.date },
             { header: "Status", render: (r) => r.status },

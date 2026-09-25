@@ -114,6 +114,8 @@ export default function UsersPage() {
           rowKey={(u: ManagedUser) => u.id}
           data={users ?? []}
           emptyTitle="No users found"
+          searchableText={(u) => `${u.email} ${u.role} ${u.is_active ? "active" : "inactive"}`}
+          searchPlaceholder="Search users by email, role, or status..."
           columns={[
             { header: "Email", render: (u) => u.email },
             { header: "Role", render: (u) => <Badge variant={ROLE_VARIANT[u.role]}>{u.role}</Badge> },

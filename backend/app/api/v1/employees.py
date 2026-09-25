@@ -90,8 +90,6 @@ async def update_employee(
     employee = await employee_service.update_employee(db, employee_id, data, current_user)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
     return _to_read_schema(employee, user_result.scalar_one())
-    user_result = await db.execute(select(User).where(User.id == employee.user_id))
-    return _to_read_schema(employee, user_result.scalar_one())
 
 
 @router.delete("/{employee_id}", status_code=204, dependencies=[Depends(require_permission("employee:delete"))])

@@ -27,6 +27,8 @@ export default function LeaveApprovalsPage() {
         rowKey={(r: LeaveRequest) => r.id}
         data={pending ?? []}
         emptyTitle="No pending requests"
+        searchableText={(r) => `${nameOf(r.employee_id)} ${r.start_date} ${r.end_date} ${r.reason}`}
+        searchPlaceholder="Search requests by employee, date, or reason..."
         columns={[
           { header: "Employee", render: (r) => nameOf(r.employee_id) },
           { header: "From", render: (r) => r.start_date },

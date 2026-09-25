@@ -133,6 +133,8 @@ export default function LeavePage() {
           rowKey={(r: LeaveRequest) => r.id}
           data={requests ?? []}
           emptyTitle="No leave requests yet"
+          searchableText={(r) => `${r.start_date} ${r.end_date} ${r.reason} ${r.status}`}
+          searchPlaceholder="Search leave requests by date, reason, or status..."
           columns={[
             { header: "From", render: (r) => r.start_date },
             { header: "To", render: (r) => r.end_date },

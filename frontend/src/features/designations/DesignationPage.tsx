@@ -46,6 +46,8 @@ export default function DesignationPage() {
       <DataTable
         rowKey={(d: Designation) => d.id}
         data={designations ?? []}
+        searchableText={(d) => d.title}
+        searchPlaceholder="Search designations..."
         columns={[
           { header: "Title", render: (d) => d.title },
           {

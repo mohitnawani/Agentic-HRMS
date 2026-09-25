@@ -63,6 +63,8 @@ export default function AnnouncementsPage() {
           rowKey={(a: Announcement) => a.id}
           data={announcements ?? []}
           emptyTitle="No announcements yet"
+          searchableText={(a) => `${a.title} ${a.body} ${a.is_active ? "active" : "hidden"}`}
+          searchPlaceholder="Search announcements..."
           columns={[
             { header: "Title", render: (a) => a.title },
             { header: "Body", render: (a) => a.body },

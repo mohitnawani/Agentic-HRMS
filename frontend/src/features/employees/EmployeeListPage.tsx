@@ -47,6 +47,8 @@ export default function EmployeeListPage() {
       <DataTable
         rowKey={(e: Employee) => e.id}
         data={employees}
+        searchableText={(e) => [e.first_name, e.last_name, e.email, e.employee_code, e.role].join(" ")}
+        searchPlaceholder="Search employees by name, email, code, or role..."
         columns={[
           { header: "Name", render: (e) => `${e.first_name} ${e.last_name}` },
           { header: "Email", render: (e) => e.email },

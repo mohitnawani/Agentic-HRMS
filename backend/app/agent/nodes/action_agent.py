@@ -14,12 +14,15 @@ from app.agent.tools.write_tools import (
     WriteToolConflict,
     approve_leave,
     authorize_write_tool,
+    complete_policy_upload,
+    create_announcement,
     create_department,
     create_employee,
     delete_employee,
     reject_leave,
     update_employee,
 )
+from app.schemas.announcement import AnnouncementCreate
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 
@@ -30,6 +33,8 @@ ActionToolName = Literal[
     "approve_leave",
     "reject_leave",
     "create_department",
+    "create_announcement",
+    "upload_policy",
 ]
 
 UUID_PATTERN = re.compile(
@@ -40,7 +45,12 @@ EMAIL_PATTERN = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
 DATE_PATTERN = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 CONFIRMATION_WORDS = {"yes", "y", "confirm", "confirmed", "proceed"}
 CANCELLATION_WORDS = {"no", "n", "cancel", "stop", "abort"}
-SENSITIVE_ACTIONS = {"delete_employee", "approve_leave", "reject_leave"}
+SENSITIVE_ACTIONS = {
+    "delete_employee",
+    "approve_leave",
+    "reject_leave",
+    "create_announcement",
+}
 
 REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
     "create_employee": (
@@ -55,6 +65,8 @@ REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
     "approve_leave": ("request_id",),
     "reject_leave": ("request_id",),
     "create_department": ("name",),
+    "create_announcement": ("title", "body"),
+    "upload_policy": ("title", "category", "policy_file", "document_id"),
 }
 
 FIELD_PROMPTS = {
@@ -67,6 +79,10 @@ FIELD_PROMPTS = {
     "request_id": "What is the leave request ID?",
     "updates": "Which employee fields should be updated?",
     "name": "What is the department name?",
+    "title": "What title should be used?",
+    "body": "What should the announcement say?",
+    "category": "What category should this policy use?",
+    "policy_file": "Choose the PDF policy file to upload.",
 }
 
 
@@ -79,6 +95,8 @@ def select_action_tool(message: str) -> ActionToolName | None:
         (r"\bapprove\b.*\bleave\b", "approve_leave"),
         (r"\breject\b.*\bleave\b", "reject_leave"),
         (r"\b(create|add)\b.*\bdepartment\b", "create_department"),
+        (r"\b(create|add|post|publish)\b.*\bannouncement\b", "create_announcement"),
+        (r"\b(upload|add|create)\b.*\b(policy|document)\b", "upload_policy"),
     )
     for pattern, tool in patterns:
         if re.search(pattern, normalized):
@@ -149,6 +167,11 @@ def _extract_initial_payload(
         if match:
             payload["name"] = match.group(1).strip(" \"'")
 
+    if tool in {"create_announcement", "upload_policy"} and not payload.get("title"):
+        quoted_title = re.search(r"[\"']([^\"']+)[\"']", message)
+        if quoted_title:
+            payload["title"] = quoted_title.group(1).strip()
+
     normalized = message.lower()
     if tool == "delete_employee" and (
         "delete all" in normalized or "bulk" in normalized
@@ -209,12 +232,21 @@ def _pending_result(
     result_status = (
         "confirmation_required" if stage == "confirmation" else "needs_input"
     )
+    interaction: dict[str, object] = {"stage": stage}
+    if missing_field:
+        interaction["missing_field"] = missing_field
+    if tool == "upload_policy" and missing_field == "policy_file":
+        interaction["parameters"] = {
+            "title": payload.get("title", ""),
+            "category": payload.get("category", ""),
+        }
     return (
         {
             "agent": "action",
             "status": result_status,
             "tool": tool,
             "message": message,
+            "data": interaction,
         },
         pending,
     )
@@ -230,6 +262,7 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         "delete_employee": "delete this employee",
         "approve_leave": "approve this leave request",
         "reject_leave": "reject this leave request",
+        "create_announcement": "publish this announcement",
     }
     return (
         f"Please confirm that you want to {labels[tool]}. "
@@ -247,6 +280,8 @@ def _execution_state(
         "approve_leave": "Approve leave request",
         "reject_leave": "Reject leave request",
         "create_department": "Create department",
+        "create_announcement": "Create announcement",
+        "upload_policy": "Upload policy",
     }
     return {**state, "message": messages[tool], "action_payload": payload}
 
@@ -284,6 +319,16 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
     elif tool == "reject_leave":
         data = await reject_leave(state, db, _target_id(state, "request_id"))
         message = "Leave request rejected."
+    elif tool == "create_announcement":
+        data = await create_announcement(
+            state, db, AnnouncementCreate.model_validate(payload)
+        )
+        message = f"Published announcement {data['title']}."
+    elif tool == "upload_policy":
+        data = await complete_policy_upload(
+            state, db, _target_id(state, "document_id")
+        )
+        message = f"Uploaded and indexed policy {data['title']}."
     else:
         data = await create_department(state, db, _department_data(state))
         message = f"Created department {data['name']}."

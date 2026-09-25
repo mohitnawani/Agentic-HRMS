@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router";
 import LoginPage from "@/features/auth/LoginPage";
 import ProtectedRoute from "./ProtectedRoute";
 import AppLayout from "@/layouts/AppLayout";
-import PlaceholderPage from "@/pages/PlaceholderPage";
+import ChatPage from "@/features/agent/ChatPage";
 import EmployeeDashboard from "@/features/dashboard/EmployeeDashboard";
 import HRDashboard from "@/features/dashboard/HRDashboard";
 import AdminDashboard from "@/features/dashboard/AdminDashboard";
@@ -34,7 +34,7 @@ export const router = createBrowserRouter([
           { path: "/employee/attendance", element: <AttendanceHistoryPage /> },
           { path: "/employee/leave", element: <LeavePage /> },
           { path: "/employee/policies", element: <PoliciesPage /> },
-          { path: "/employee/assistant", element: <PlaceholderPage title="Assistant" /> },
+          { path: "/employee/assistant", element: <ChatPage /> },
         ],
       },
     ],
@@ -53,7 +53,7 @@ export const router = createBrowserRouter([
           { path: "/hr/leave", element: <LeaveApprovalsPage /> },
           { path: "/hr/policies", element: <PoliciesPage /> },
           { path: "/hr/announcements", element: <AnnouncementsPage /> },
-          { path: "/hr/assistant", element: <PlaceholderPage title="Assistant" /> },
+          { path: "/hr/assistant", element: <ChatPage /> },
         ],
       },
     ],
@@ -73,7 +73,7 @@ export const router = createBrowserRouter([
           { path: "/admin/holidays", element: <HolidaysPage /> },
           { path: "/admin/announcements", element: <AnnouncementsPage /> },
           { path: "/admin/users", element: <UsersPage /> },
-          { path: "/admin/assistant", element: <PlaceholderPage title="Assistant" /> },
+          { path: "/admin/assistant", element: <ChatPage /> },
         ],
       },
     ],

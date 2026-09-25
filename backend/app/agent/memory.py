@@ -12,6 +12,7 @@ from app.agent.state import ConversationMessage
 from app.models.agent_conversation import AgentConversation, AgentMessage
 
 RECENT_MESSAGE_LIMIT = 10
+CONVERSATION_DISPLAY_LIMIT = 50
 SUMMARY_CHARACTER_LIMIT = 2000
 
 
@@ -56,6 +57,25 @@ async def load_conversation_memory(
         for message in messages
     ]
     return history, conversation.summary or "", conversation.pending_action
+
+
+async def load_conversation_messages(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    *,
+    limit: int = CONVERSATION_DISPLAY_LIMIT,
+) -> tuple[AgentConversation, list[AgentMessage]]:
+    """Load display history after enforcing conversation ownership."""
+    conversation = await ensure_conversation(db, user_id, conversation_id)
+    statement = (
+        select(AgentMessage)
+        .where(AgentMessage.conversation_id == conversation.id)
+        .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+        .limit(limit)
+    )
+    messages = list(reversed((await db.scalars(statement)).all()))
+    return conversation, messages
 
 
 def _rolling_summary(messages: list[AgentMessage]) -> str | None:

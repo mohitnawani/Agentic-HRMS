@@ -9,10 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import AgentState
 from app.core.permissions import has_permission
+from app.models.announcement import Announcement
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.policy_document import PolicyDocument
 from app.models.role import RoleEnum
 from app.models.user import User
+from app.schemas.announcement import AnnouncementCreate
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 from app.services import employee_service, leave_service
@@ -33,6 +36,8 @@ ACTION_PERMISSIONS = {
     "approve_leave": "leave:approve",
     "reject_leave": "leave:approve",
     "create_department": "department:write",
+    "create_announcement": "announcement:write",
+    "upload_policy": "policy:write",
 }
 
 
@@ -165,4 +170,39 @@ async def create_department(
         "department_id": str(department.id),
         "name": department.name,
         "description": department.description,
+    }
+
+
+async def create_announcement(
+    state: AgentState, db: AsyncSession, data: AnnouncementCreate
+) -> dict[str, object]:
+    actor = await authorize_write_tool(state, db, "create_announcement")
+    announcement = Announcement(**data.model_dump(), created_by=actor.id)
+    db.add(announcement)
+    await db.commit()
+    await db.refresh(announcement)
+    return {
+        "announcement_id": str(announcement.id),
+        "title": announcement.title,
+        "is_active": announcement.is_active,
+    }
+
+
+async def complete_policy_upload(
+    state: AgentState, db: AsyncSession, document_id: uuid.UUID
+) -> dict[str, object]:
+    """Verify an upload performed by the policy API before completing the agent action."""
+    actor = await authorize_write_tool(state, db, "upload_policy")
+    document = await db.scalar(
+        select(PolicyDocument).where(
+            PolicyDocument.id == document_id,
+            PolicyDocument.uploaded_by == actor.id,
+        )
+    )
+    if document is None:
+        raise WriteToolConflict("The uploaded policy document could not be verified.")
+    return {
+        "document_id": str(document.id),
+        "title": document.title,
+        "category": document.category,
     }

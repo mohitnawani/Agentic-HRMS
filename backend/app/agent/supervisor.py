@@ -10,7 +10,7 @@ AGENT_NODE_NAMES = Literal[
 ]
 
 ACTION_PATTERNS = (
-    r"\b(create|add|update|change|edit|delete|remove)\b",
+    r"\b(create|add|update|change|edit|delete|remove|upload|publish|post)\b",
     r"\b(approve|reject|cancel)\b.*\b(leave|request)\b",
     r"\bapply\b.*\bleave\b",
     r"\b(check[ -]?in|check[ -]?out)\b",

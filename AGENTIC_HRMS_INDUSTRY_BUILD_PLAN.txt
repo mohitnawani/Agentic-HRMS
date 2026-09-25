@@ -308,14 +308,14 @@ TASKS:
     context. Chat panel UI, accessible from every role's layout, tool
     results rendered as small cards not raw text.
 DONE-WHEN:
-  [ ] Can chat with the assistant from the UI as any role, streaming works
+  [x] Can chat with the assistant from the UI as any role, streaming works
 
 DAY 22 — Follow-up/confirmation UX + full scenario retest through UI
 TASKS:
   - Multi-turn follow-up and confirmation flows feel natural in the chat UI.
     Re-run all 4 doc scenarios through the actual UI.
 DONE-WHEN:
-  [ ] All 4 scenarios demoable live, start to finish, from the chat UI
+  [x] All 4 scenarios demoable live, start to finish, from the chat UI
 
 DAY 23 — Audit logging
 TASKS:

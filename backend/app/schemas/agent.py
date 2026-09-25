@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -41,3 +42,23 @@ class AgentChatResponse(BaseModel):
     intent: AgentIntent
     conversation_id: uuid.UUID
     sources: list[AgentSource] = Field(default_factory=list)
+
+
+class AgentConversationMessage(BaseModel):
+    id: uuid.UUID
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class AgentPendingInteraction(BaseModel):
+    tool: str
+    stage: Literal["slots", "confirmation"]
+    missing_field: str | None = None
+    parameters: dict[str, object] = Field(default_factory=dict)
+
+
+class AgentConversationResponse(BaseModel):
+    conversation_id: uuid.UUID
+    messages: list[AgentConversationMessage]
+    pending_interaction: AgentPendingInteraction | None = None

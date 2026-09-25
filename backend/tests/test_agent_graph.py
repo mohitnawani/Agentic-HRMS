@@ -4,6 +4,8 @@ import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.graph import agent_graph
+from app.agent.nodes import database_agent as database_module
+from app.agent.nodes import rag_agent as rag_module
 from app.models.role import RoleEnum
 
 
@@ -19,7 +21,31 @@ from app.models.role import RoleEnum
         ("Hello, what can you help me with?", "general", None),
     ],
 )
-async def test_graph_routes_requests(message, expected_intent, expected_node):
+async def test_graph_routes_requests(
+    message, expected_intent, expected_node, monkeypatch
+):
+    async def fake_database(state, db):
+        return {
+            "agent": "database",
+            "status": "success",
+            "tool": "test_tool",
+            "message": "Database result",
+        }
+
+    async def fake_rag(state, db):
+        return {
+            "tool_result": {
+                "agent": "rag",
+                "status": "success",
+                "tool": "policy_rag",
+                "message": "Grounded policy result",
+                "data": {"sources": []},
+            },
+            "retrieved_context": [],
+        }
+
+    monkeypatch.setattr(database_module, "run_database_query", fake_database)
+    monkeypatch.setattr(rag_module, "run_policy_rag", fake_rag)
     user_id = uuid.uuid4()
     result = await agent_graph.ainvoke(
         {
@@ -27,7 +53,8 @@ async def test_graph_routes_requests(message, expected_intent, expected_node):
             "role": RoleEnum.EMPLOYEE,
             "message": message,
             "history": [],
-        }
+        },
+        context={"db": object()},
     )
 
     assert result["user_id"] == user_id
@@ -38,7 +65,8 @@ async def test_graph_routes_requests(message, expected_intent, expected_node):
     assert bool(result.get("final_answer"))
     if expected_node:
         assert expected_node in result["route_trace"]
-        assert result["tool_results"][0]["status"] == "stub"
+        expected_status = "stub" if expected_intent == "action" else "success"
+        assert result["tool_results"][0]["status"] == expected_status
     else:
         assert result.get("tool_results", []) == []
 

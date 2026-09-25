@@ -267,7 +267,7 @@ TASKS:
     graph state, never from LLM free text.
   - Wrap Day 15's RAG pipeline as a graph node/tool.
 DONE-WHEN:
-  [ ] "How many leaves do I have left?" and "What's the WFH policy?" both
+  [x] "How many leaves do I have left?" and "What's the WFH policy?" both
       route correctly and return scoped/grounded answers
 
 DAY 18 — Action Agent (CRUD tools) + permission enforcement

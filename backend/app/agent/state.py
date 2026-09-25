@@ -4,6 +4,8 @@ import operator
 import uuid
 from typing import Annotated, Literal, NotRequired, Required, TypedDict
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.role import RoleEnum
 
 AgentIntent = Literal["rag", "database", "action", "general"]
@@ -17,14 +19,25 @@ class ConversationMessage(TypedDict):
 class RetrievedContext(TypedDict):
     document_id: str
     title: str
+    category: str
     page_number: int
+    chunk_index: int
     content: str
+    similarity: float
 
 
 class AgentToolResult(TypedDict):
     agent: AgentIntent
     status: Literal["stub", "success", "denied", "error"]
     message: str
+    tool: NotRequired[str]
+    data: NotRequired[dict[str, object] | list[dict[str, object]]]
+
+
+class AgentRuntimeContext(TypedDict):
+    """Non-serializable dependencies available only during one graph run."""
+
+    db: AsyncSession
 
 
 class AgentState(TypedDict, total=False):

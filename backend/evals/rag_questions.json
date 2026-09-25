@@ -1,0 +1,82 @@
+[
+  {
+    "id": "supported_roles",
+    "question": "Which three primary user roles does Agentic HRMS support?",
+    "expects_answer": true,
+    "expected_pages": [1, 11],
+    "evidence_terms": ["admin", "hr", "employee"],
+    "answer_terms": ["admin", "hr", "employee"]
+  },
+  {
+    "id": "employee_self_service",
+    "question": "What leave self-service actions can an employee perform?",
+    "expects_answer": true,
+    "expected_pages": [2],
+    "evidence_terms": ["apply for leave", "leave balance", "leave history"],
+    "answer_terms": ["apply", "leave balance", "leave history"]
+  },
+  {
+    "id": "employee_delete_permission",
+    "question": "Can an employee delete another employee's record?",
+    "expects_answer": true,
+    "expected_pages": [5, 8, 10],
+    "evidence_terms": ["employee", "delete", "permission"],
+    "answer_terms": ["employee", "delete", "cannot"]
+  },
+  {
+    "id": "structured_data_source",
+    "question": "Where should attendance data and leave balances be retrieved from?",
+    "expects_answer": true,
+    "expected_pages": [6],
+    "evidence_terms": ["attendance data", "leave balances", "database"],
+    "answer_terms": ["attendance", "leave", "database"]
+  },
+  {
+    "id": "sensitive_confirmation",
+    "question": "What must the agent do before executing a destructive or sensitive operation?",
+    "expects_answer": true,
+    "expected_pages": [8],
+    "evidence_terms": ["sensitive", "explicit confirmation", "before"],
+    "answer_terms": ["confirmation", "before"]
+  },
+  {
+    "id": "audit_log_fields",
+    "question": "What information should be recorded in audit logs for important actions?",
+    "expects_answer": true,
+    "expected_pages": [9],
+    "evidence_terms": ["authenticated user", "user role", "timestamp"],
+    "answer_terms": ["user", "role", "action", "timestamp"]
+  },
+  {
+    "id": "agent_request_categories",
+    "question": "What three major categories of requests does the AI agent handle?",
+    "expects_answer": true,
+    "expected_pages": [4],
+    "evidence_terms": ["information retrieval", "knowledge-based questions", "actions and operations"],
+    "answer_terms": ["information retrieval", "knowledge", "actions"]
+  },
+  {
+    "id": "knowledge_base_documents",
+    "question": "What kinds of company documents can the policy knowledge base contain?",
+    "expects_answer": true,
+    "expected_pages": [4],
+    "evidence_terms": ["employee handbooks", "leave policies", "work-from-home policies"],
+    "answer_terms": ["handbook", "leave", "work-from-home"]
+  },
+  {
+    "id": "unknown_leave_quota",
+    "question": "Exactly how many casual leave days does every employee receive annually?",
+    "expects_answer": false,
+    "expected_pages": [],
+    "evidence_terms": [],
+    "answer_terms": []
+  },
+  {
+    "id": "unknown_cafeteria",
+    "question": "What is the company cafeteria menu for next Tuesday?",
+    "expects_answer": false,
+    "expected_pages": [],
+    "evidence_terms": [],
+    "answer_terms": []
+  }
+]

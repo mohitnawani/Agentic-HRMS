@@ -41,9 +41,7 @@ def validate_vectors(vectors: list[list[float]], expected_count: int) -> None:
             raise PolicyEmbeddingError("Embedding cannot be a zero vector.")
 
 
-async def embed_policy_texts(texts: list[str], title: str) -> list[list[float]]:
-    if not texts:
-        return []
+def _create_embedder() -> GeminiPolicyEmbeddings:
     if (
         not settings.gemini_api_key
         or not settings.gemini_api_key.get_secret_value().strip()
@@ -51,12 +49,23 @@ async def embed_policy_texts(texts: list[str], title: str) -> list[list[float]]:
         raise PolicyEmbeddingError(
             "Set GEMINI_API_KEY in the root .env to enable ingestion."
         )
-    embedder = GeminiPolicyEmbeddings(
+    return GeminiPolicyEmbeddings(
         model=settings.embedding_model,
         api_key=settings.gemini_api_key,
         vertexai=False,
         output_dimensionality=settings.embedding_dimensions,
     )
+
+
+async def _close_embedder(embedder: GeminiPolicyEmbeddings) -> None:
+    await embedder.client.aio.aclose()
+    embedder.client.close()
+
+
+async def embed_policy_texts(texts: list[str], title: str) -> list[list[float]]:
+    if not texts:
+        return []
+    embedder = _create_embedder()
     vectors = []
     try:
         # Small sequential batches limit request size and concurrent quota use.
@@ -74,6 +83,28 @@ async def embed_policy_texts(texts: list[str], title: str) -> list[list[float]]:
             "Gemini embedding failed. Please retry later."
         ) from exc
     finally:
-        await embedder.client.aio.aclose()
-        embedder.client.close()
+        await _close_embedder(embedder)
     return vectors
+
+
+async def embed_policy_query(question: str) -> list[float]:
+    """Embed a user question in the same vector space as policy chunks."""
+    normalized = " ".join(question.split())
+    if not normalized:
+        raise PolicyEmbeddingError("Question cannot be empty.")
+    embedder = _create_embedder()
+    try:
+        # Gemini Embedding 2 uses natural-language prefixes for retrieval intent.
+        vector = await embedder.aembed_query(
+            f"task: question answering | query: {normalized}"
+        )
+        validate_vectors([vector], 1)
+        return vector
+    except PolicyEmbeddingError:
+        raise
+    except Exception as exc:
+        raise PolicyEmbeddingError(
+            "Gemini embedding failed. Please retry later."
+        ) from exc
+    finally:
+        await _close_embedder(embedder)

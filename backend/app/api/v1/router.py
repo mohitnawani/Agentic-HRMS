@@ -1,8 +1,18 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
-    announcements, attendance, auth, dashboard, departments, designations,
-    employees, holidays, leave, policies, users,
+    announcements,
+    attendance,
+    auth,
+    dashboard,
+    departments,
+    designations,
+    employees,
+    holidays,
+    leave,
+    policies,
+    rag,
+    users,
 )
 
 api_router = APIRouter()
@@ -17,3 +27,4 @@ api_router.include_router(announcements.router)
 api_router.include_router(users.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(policies.router)
+api_router.include_router(rag.router)

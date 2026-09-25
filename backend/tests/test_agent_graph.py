@@ -4,6 +4,7 @@ import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.graph import agent_graph
+from app.agent.nodes import action_agent as action_module
 from app.agent.nodes import database_agent as database_module
 from app.agent.nodes import rag_agent as rag_module
 from app.models.role import RoleEnum
@@ -44,8 +45,17 @@ async def test_graph_routes_requests(
             "retrieved_context": [],
         }
 
+    async def fake_action(state, db):
+        return {
+            "agent": "action",
+            "status": "success",
+            "tool": "test_action",
+            "message": "Action result",
+        }
+
     monkeypatch.setattr(database_module, "run_database_query", fake_database)
     monkeypatch.setattr(rag_module, "run_policy_rag", fake_rag)
+    monkeypatch.setattr(action_module, "run_action", fake_action)
     user_id = uuid.uuid4()
     result = await agent_graph.ainvoke(
         {
@@ -65,8 +75,7 @@ async def test_graph_routes_requests(
     assert bool(result.get("final_answer"))
     if expected_node:
         assert expected_node in result["route_trace"]
-        expected_status = "stub" if expected_intent == "action" else "success"
-        assert result["tool_results"][0]["status"] == expected_status
+        assert result["tool_results"][0]["status"] == "success"
     else:
         assert result.get("tool_results", []) == []
 
@@ -85,13 +94,23 @@ def test_graph_is_compiled_with_expected_nodes():
 
 
 @pytest.mark.asyncio
-async def test_mutation_language_takes_priority_over_database_nouns():
+async def test_mutation_language_takes_priority_over_database_nouns(monkeypatch):
+    async def fake_action(state, db):
+        return {
+            "agent": "action",
+            "status": "success",
+            "tool": "test_action",
+            "message": "Action result",
+        }
+
+    monkeypatch.setattr(action_module, "run_action", fake_action)
     result = await agent_graph.ainvoke(
         {
             "user_id": uuid.uuid4(),
             "role": RoleEnum.HR,
             "message": "Update this employee's department",
-        }
+        },
+        context={"db": object()},
     )
     assert result["intent"] == "action"
     assert "action_agent" in result["route_trace"]

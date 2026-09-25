@@ -48,6 +48,7 @@ class AgentState(TypedDict, total=False):
     role: Required[RoleEnum]
     message: Required[str]
     history: Annotated[list[ConversationMessage], operator.add]
+    action_payload: dict[str, object]
 
     intent: AgentIntent
     retrieved_context: Annotated[list[RetrievedContext], operator.add]
@@ -62,6 +63,7 @@ class AgentInput(TypedDict, total=False):
     role: Required[RoleEnum]
     message: Required[str]
     history: NotRequired[list[ConversationMessage]]
+    action_payload: NotRequired[dict[str, object]]
 
 
 class AgentOutput(TypedDict, total=False):

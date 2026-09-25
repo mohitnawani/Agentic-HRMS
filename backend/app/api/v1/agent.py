@@ -24,6 +24,7 @@ async def chat_with_agent(
             "role": current_user.role,
             "message": payload.message,
             "history": [item.model_dump() for item in payload.history],
+            "action_payload": payload.parameters,
         },
         context={"db": db},
     )

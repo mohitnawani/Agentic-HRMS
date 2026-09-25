@@ -14,6 +14,7 @@ class AgentHistoryMessage(BaseModel):
 class AgentChatRequest(BaseModel):
     message: str = Field(min_length=2, max_length=2000)
     history: list[AgentHistoryMessage] = Field(default_factory=list, max_length=20)
+    parameters: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("message")
     @classmethod

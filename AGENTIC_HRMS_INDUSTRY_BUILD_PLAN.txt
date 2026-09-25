@@ -276,7 +276,7 @@ TASKS:
     create_department, etc. — every tool calls the SAME require_permission
     logic from Day 2.
 DONE-WHEN:
-  [ ] Employee asking to delete an employee is rejected server-side with no
+  [x] Employee asking to delete an employee is rejected server-side with no
       DB write; HR/Admin equivalents succeed
 
 DAY 19 — Slot-filling + sensitive action confirmation + memory

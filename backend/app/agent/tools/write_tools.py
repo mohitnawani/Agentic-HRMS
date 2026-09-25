@@ -26,6 +26,16 @@ class WriteToolConflict(ValueError):
     """The requested write conflicts with current database state."""
 
 
+ACTION_PERMISSIONS = {
+    "create_employee": "employee:create",
+    "update_employee": "employee:update",
+    "delete_employee": "employee:delete",
+    "approve_leave": "leave:approve",
+    "reject_leave": "leave:approve",
+    "create_department": "department:write",
+}
+
+
 async def _actor_user(state: AgentState, db: AsyncSession) -> User:
     """Reload and verify the actor represented by trusted graph state."""
     try:
@@ -47,6 +57,16 @@ def _require(role: RoleEnum, permission: str) -> None:
         )
 
 
+async def authorize_write_tool(state: AgentState, db: AsyncSession, tool: str) -> User:
+    """Apply the shared permission policy before collecting or executing an action."""
+    permission = ACTION_PERMISSIONS.get(tool)
+    if permission is None:
+        raise WriteToolAccessDenied("This action is not permitted.")
+    actor = await _actor_user(state, db)
+    _require(actor.role, permission)
+    return actor
+
+
 def _translate_service_error(exc: HTTPException) -> WriteToolConflict:
     return WriteToolConflict(str(exc.detail))
 
@@ -54,8 +74,7 @@ def _translate_service_error(exc: HTTPException) -> WriteToolConflict:
 async def create_employee(
     state: AgentState, db: AsyncSession, data: EmployeeCreate
 ) -> dict[str, object]:
-    actor = await _actor_user(state, db)
-    _require(actor.role, "employee:create")
+    actor = await authorize_write_tool(state, db, "create_employee")
     if data.role == RoleEnum.ADMIN and actor.role != RoleEnum.ADMIN:
         raise WriteToolAccessDenied("Only admins can create admin accounts.")
     try:
@@ -75,8 +94,7 @@ async def update_employee(
     employee_id: uuid.UUID,
     data: EmployeeUpdate,
 ) -> dict[str, object]:
-    actor = await _actor_user(state, db)
-    _require(actor.role, "employee:update")
+    actor = await authorize_write_tool(state, db, "update_employee")
     if not data.model_fields_set:
         raise WriteToolConflict("At least one employee field must be provided.")
     try:
@@ -93,8 +111,7 @@ async def update_employee(
 async def delete_employee(
     state: AgentState, db: AsyncSession, employee_id: uuid.UUID
 ) -> dict[str, object]:
-    actor = await _actor_user(state, db)
-    _require(actor.role, "employee:delete")
+    actor = await authorize_write_tool(state, db, "delete_employee")
     target = await db.scalar(select(Employee).where(Employee.id == employee_id))
     if target is None:
         raise WriteToolConflict("Employee not found.")
@@ -110,8 +127,7 @@ async def delete_employee(
 async def approve_leave(
     state: AgentState, db: AsyncSession, request_id: uuid.UUID
 ) -> dict[str, object]:
-    actor = await _actor_user(state, db)
-    _require(actor.role, "leave:approve")
+    actor = await authorize_write_tool(state, db, "approve_leave")
     try:
         request = await leave_service.approve_leave(db, request_id, actor.id)
     except HTTPException as exc:
@@ -122,8 +138,7 @@ async def approve_leave(
 async def reject_leave(
     state: AgentState, db: AsyncSession, request_id: uuid.UUID
 ) -> dict[str, object]:
-    actor = await _actor_user(state, db)
-    _require(actor.role, "leave:approve")
+    actor = await authorize_write_tool(state, db, "reject_leave")
     try:
         request = await leave_service.reject_leave(db, request_id, actor.id)
     except HTTPException as exc:
@@ -134,8 +149,7 @@ async def reject_leave(
 async def create_department(
     state: AgentState, db: AsyncSession, data: DepartmentCreate
 ) -> dict[str, object]:
-    actor = await _actor_user(state, db)
-    _require(actor.role, "department:write")
+    await authorize_write_tool(state, db, "create_department")
     existing = await db.scalar(select(Department).where(Department.name == data.name))
     if existing is not None:
         raise WriteToolConflict("Department already exists.")

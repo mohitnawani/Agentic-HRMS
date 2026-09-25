@@ -13,6 +13,7 @@ class AgentHistoryMessage(BaseModel):
 
 class AgentChatRequest(BaseModel):
     message: str = Field(min_length=2, max_length=2000)
+    conversation_id: uuid.UUID | None = None
     history: list[AgentHistoryMessage] = Field(default_factory=list, max_length=20)
     parameters: dict[str, object] = Field(default_factory=dict)
 
@@ -38,4 +39,5 @@ class AgentSource(BaseModel):
 class AgentChatResponse(BaseModel):
     answer: str
     intent: AgentIntent
+    conversation_id: uuid.UUID
     sources: list[AgentSource] = Field(default_factory=list)

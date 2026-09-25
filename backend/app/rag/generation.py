@@ -36,7 +36,14 @@ Never cite a source number that is not present in the supplied context."""
 PROMPT = ChatPromptTemplate.from_messages(
     [
         ("system", SYSTEM_PROMPT),
-        ("human", "Policy sources:\n{context}\n\nEmployee question: {question}"),
+        (
+            "human",
+            (
+                "Conversation context (for resolving references only):\n"
+                "{conversation_context}\n\nPolicy sources:\n{context}\n\n"
+                "Employee question: {question}"
+            ),
+        ),
     ]
 )
 
@@ -71,13 +78,20 @@ def build_grounded_chain():
 
 
 async def generate_grounded_answer(
-    question: str, chunks: list[RetrievedChunk]
+    question: str,
+    chunks: list[RetrievedChunk],
+    *,
+    conversation_context: str = "No earlier conversation context.",
 ) -> GroundedAnswer:
     if not chunks:
         return GroundedAnswer(answer=UNKNOWN_ANSWER)
     try:
         result = await build_grounded_chain().ainvoke(
-            {"question": question, "context": format_context(chunks)}
+            {
+                "question": question,
+                "context": format_context(chunks),
+                "conversation_context": conversation_context,
+            }
         )
     except PolicyEmbeddingError:
         raise

@@ -24,7 +24,20 @@ async def run_policy_rag(state: AgentState, db) -> dict:
         }
 
     chunks = await retrieve_policy_chunks(db, state["message"])
-    generated = await generate_grounded_answer(state["message"], chunks)
+    history_lines = [
+        f"{item['role'].title()}: {item['content']}"
+        for item in state.get("history", [])[-10:]
+    ]
+    if state.get("conversation_summary"):
+        history_lines.insert(0, f"Earlier summary: {state['conversation_summary']}")
+    if history_lines:
+        generated = await generate_grounded_answer(
+            state["message"],
+            chunks,
+            conversation_context="\n".join(history_lines),
+        )
+    else:
+        generated = await generate_grounded_answer(state["message"], chunks)
     cited = [chunks[number - 1] for number in generated.source_numbers]
     sources = [
         {

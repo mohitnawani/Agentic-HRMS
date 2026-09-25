@@ -285,10 +285,10 @@ TASKS:
   - Confirmation step for destructive/bulk actions.
   - Short-term conversation memory, strictly scoped per authenticated user.
 DONE-WHEN:
-  [ ] "Add employee Priya Singh" (missing fields) asks a follow-up and
+  [x] "Add employee Priya Singh" (missing fields) asks a follow-up and
       completes correctly after the answer
-  [ ] "Delete all test employee records" requires confirmation before acting
-  [ ] Two different users never see each other's conversation context
+  [x] "Delete all test employee records" requires confirmation before acting
+  [x] Two different users never see each other's conversation context
 
 DAY 20 — Full agent scenario testing
 TASKS:
@@ -296,8 +296,8 @@ TASKS:
     query, HR creates employee, unauthorized delete) exactly as written.
     Fix routing/misclassification bugs. Small intent eval set (10-15 prompts).
 DONE-WHEN:
-  [ ] All 4 doc scenarios produce the documented outcome via API calls
-  [ ] Intent eval passes 8+/10
+  [x] All 4 doc scenarios produce the documented outcome via API calls
+  [x] Intent eval passes 8+/10
 
 ================================================================================
 WEEK 4 — CHAT UI, AUDIT/SECURITY, CD + DEPLOYMENT  (Days 21-25)

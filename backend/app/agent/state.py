@@ -28,7 +28,15 @@ class RetrievedContext(TypedDict):
 
 class AgentToolResult(TypedDict):
     agent: AgentIntent
-    status: Literal["stub", "success", "denied", "error"]
+    status: Literal[
+        "stub",
+        "success",
+        "denied",
+        "error",
+        "needs_input",
+        "confirmation_required",
+        "cancelled",
+    ]
     message: str
     tool: NotRequired[str]
     data: NotRequired[dict[str, object] | list[dict[str, object]]]
@@ -48,6 +56,10 @@ class AgentState(TypedDict, total=False):
     role: Required[RoleEnum]
     message: Required[str]
     history: Annotated[list[ConversationMessage], operator.add]
+    conversation_id: uuid.UUID
+    conversation_summary: str
+    pending_action: dict[str, object] | None
+    memory_user_message: str
     action_payload: dict[str, object]
 
     intent: AgentIntent
@@ -63,6 +75,7 @@ class AgentInput(TypedDict, total=False):
     role: Required[RoleEnum]
     message: Required[str]
     history: NotRequired[list[ConversationMessage]]
+    conversation_id: NotRequired[uuid.UUID]
     action_payload: NotRequired[dict[str, object]]
 
 
@@ -75,3 +88,5 @@ class AgentOutput(TypedDict, total=False):
     route_trace: list[str]
     final_answer: str
     error: str
+    conversation_id: uuid.UUID
+    pending_action: dict[str, object] | None

@@ -31,3 +31,15 @@ the `0.45` maximum cosine-distance threshold. The tuned run scored 10/10.
 
 Update this dataset whenever the evaluated policy documents change. Do not
 weaken expected evidence or answer terms merely to improve the score.
+
+## Agent intent evaluation
+
+`agent_intents.json` is the deterministic Day 20 routing benchmark. Run it
+from `backend` with:
+
+```powershell
+.\venv-hrms\Scripts\python.exe -m app.agent.evaluation
+```
+
+The command succeeds when at least 8 of the 10 prompts route to the expected
+RAG, database, action, or general path.

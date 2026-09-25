@@ -1,8 +1,8 @@
-"""Permission-controlled Action Agent for HRMS mutations."""
+"""Permission-controlled actions with slot filling and confirmation gates."""
 
 import re
 import uuid
-from typing import Literal
+from typing import Literal, cast
 
 from fastapi import HTTPException
 from langgraph.runtime import Runtime
@@ -13,6 +13,7 @@ from app.agent.tools.write_tools import (
     WriteToolAccessDenied,
     WriteToolConflict,
     approve_leave,
+    authorize_write_tool,
     create_department,
     create_employee,
     delete_employee,
@@ -35,6 +36,38 @@ UUID_PATTERN = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
 )
+EMAIL_PATTERN = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
+DATE_PATTERN = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+CONFIRMATION_WORDS = {"yes", "y", "confirm", "confirmed", "proceed"}
+CANCELLATION_WORDS = {"no", "n", "cancel", "stop", "abort"}
+SENSITIVE_ACTIONS = {"delete_employee", "approve_leave", "reject_leave"}
+
+REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
+    "create_employee": (
+        "first_name",
+        "last_name",
+        "email",
+        "date_of_joining",
+        "password",
+    ),
+    "update_employee": ("employee_id", "updates"),
+    "delete_employee": ("employee_id",),
+    "approve_leave": ("request_id",),
+    "reject_leave": ("request_id",),
+    "create_department": ("name",),
+}
+
+FIELD_PROMPTS = {
+    "first_name": "What is the employee's first name?",
+    "last_name": "What is the employee's last name?",
+    "email": "What is the employee's email address?",
+    "date_of_joining": "What is the joining date? Please use YYYY-MM-DD.",
+    "password": "Enter a temporary password for the employee.",
+    "employee_id": "What is the employee ID?",
+    "request_id": "What is the leave request ID?",
+    "updates": "Which employee fields should be updated?",
+    "name": "What is the department name?",
+}
 
 
 def select_action_tool(message: str) -> ActionToolName | None:
@@ -80,7 +113,146 @@ def _department_data(state: AgentState) -> DepartmentCreate:
     return DepartmentCreate.model_validate(payload)
 
 
+def _extract_initial_payload(
+    tool: ActionToolName, state: AgentState
+) -> dict[str, object]:
+    payload = dict(state.get("action_payload", {}))
+    message = state["message"].strip()
+    uuid_match = UUID_PATTERN.search(message)
+    if uuid_match and tool in {"update_employee", "delete_employee"}:
+        payload.setdefault("employee_id", uuid_match.group())
+    if uuid_match and tool in {"approve_leave", "reject_leave"}:
+        payload.setdefault("request_id", uuid_match.group())
+
+    if tool == "create_employee":
+        name_match = re.search(
+            r"\bemployee(?:\s+named)?\s+([A-Za-z][A-Za-z'-]+)"
+            r"(?:\s+([A-Za-z][A-Za-z'-]+))?",
+            message,
+            flags=re.IGNORECASE,
+        )
+        if name_match:
+            payload.setdefault("first_name", name_match.group(1).title())
+            if name_match.group(2):
+                payload.setdefault("last_name", name_match.group(2).title())
+        email_match = EMAIL_PATTERN.search(message)
+        date_match = DATE_PATTERN.search(message)
+        if email_match:
+            payload.setdefault("email", email_match.group())
+        if date_match:
+            payload.setdefault("date_of_joining", date_match.group())
+
+    if tool == "create_department" and not payload.get("name"):
+        match = re.search(
+            r"\bdepartment(?:\s+named)?\s+(.+)$", message, flags=re.IGNORECASE
+        )
+        if match:
+            payload["name"] = match.group(1).strip(" \"'")
+
+    normalized = message.lower()
+    if tool == "delete_employee" and (
+        "delete all" in normalized or "bulk" in normalized
+    ):
+        payload["bulk"] = True
+        payload.pop("employee_id", None)
+    return payload
+
+
+def _missing_field(tool: ActionToolName, payload: dict[str, object]) -> str | None:
+    if tool == "delete_employee" and payload.get("bulk"):
+        return None
+    for field in REQUIRED_FIELDS[tool]:
+        value = payload.get(field)
+        if value is None or value == "" or (field == "updates" and not value):
+            return field
+    return None
+
+
+def _merge_slot_answer(
+    field: str, message: str, supplied: dict[str, object], payload: dict[str, object]
+) -> bool:
+    payload.update(supplied)
+    if field in supplied:
+        return field == "password"
+    normalized = message.strip()
+    if field == "email":
+        match = EMAIL_PATTERN.search(normalized)
+        payload[field] = match.group() if match else normalized
+    elif field == "date_of_joining":
+        match = DATE_PATTERN.search(normalized)
+        payload[field] = match.group() if match else normalized
+    elif field in {"employee_id", "request_id"}:
+        match = UUID_PATTERN.search(normalized)
+        payload[field] = match.group() if match else normalized
+    elif field == "updates":
+        if supplied:
+            payload[field] = supplied.get("updates", supplied)
+    else:
+        payload[field] = normalized
+    return field == "password"
+
+
+def _pending_result(
+    tool: ActionToolName,
+    payload: dict[str, object],
+    stage: str,
+    message: str,
+    missing_field: str | None = None,
+) -> tuple[AgentToolResult, dict[str, object]]:
+    pending: dict[str, object] = {
+        "tool": tool,
+        "stage": stage,
+        "parameters": payload,
+    }
+    if missing_field:
+        pending["missing_field"] = missing_field
+    result_status = (
+        "confirmation_required" if stage == "confirmation" else "needs_input"
+    )
+    return (
+        {
+            "agent": "action",
+            "status": result_status,
+            "tool": tool,
+            "message": message,
+        },
+        pending,
+    )
+
+
+def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> str:
+    if tool == "delete_employee" and payload.get("bulk"):
+        return (
+            "This is a bulk destructive request. No records have been changed. "
+            "Reply 'confirm' to continue or 'cancel' to stop."
+        )
+    labels = {
+        "delete_employee": "delete this employee",
+        "approve_leave": "approve this leave request",
+        "reject_leave": "reject this leave request",
+    }
+    return (
+        f"Please confirm that you want to {labels[tool]}. "
+        "No changes have been made yet. Reply 'confirm' or 'cancel'."
+    )
+
+
+def _execution_state(
+    state: AgentState, tool: ActionToolName, payload: dict[str, object]
+) -> AgentState:
+    messages = {
+        "create_employee": "Create employee",
+        "update_employee": "Update employee",
+        "delete_employee": "Delete employee",
+        "approve_leave": "Approve leave request",
+        "reject_leave": "Reject leave request",
+        "create_department": "Create department",
+    }
+    return {**state, "message": messages[tool], "action_payload": payload}
+
+
 async def run_action(state: AgentState, db) -> AgentToolResult:
+    """Execute a complete and already-confirmed action."""
     tool = select_action_tool(state["message"])
     if tool is None:
         return {
@@ -124,17 +296,117 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
     }
 
 
+async def handle_action(
+    state: AgentState, db
+) -> tuple[AgentToolResult, dict[str, object] | None, bool]:
+    """Collect missing slots, gate sensitive actions, then execute."""
+    pending = state.get("pending_action")
+    sanitized = False
+    if pending:
+        raw_tool = pending.get("tool")
+        if raw_tool not in REQUIRED_FIELDS:
+            raise WriteToolConflict(
+                "The pending action is invalid. Please start again."
+            )
+        tool = cast(ActionToolName, raw_tool)
+        payload = dict(cast(dict, pending.get("parameters", {})))
+        await authorize_write_tool(state, db, tool)
+        stage = pending.get("stage")
+        answer = " ".join(state["message"].lower().split())
+        if stage == "confirmation":
+            if answer in CANCELLATION_WORDS:
+                return (
+                    {
+                        "agent": "action",
+                        "status": "cancelled",
+                        "tool": tool,
+                        "message": "Action cancelled. No changes were made.",
+                    },
+                    None,
+                    False,
+                )
+            if answer not in CONFIRMATION_WORDS:
+                result, unchanged = _pending_result(
+                    tool,
+                    payload,
+                    "confirmation",
+                    "Please reply 'confirm' to continue or 'cancel' to stop.",
+                )
+                return result, unchanged, False
+            if payload.get("bulk"):
+                return (
+                    {
+                        "agent": "action",
+                        "status": "error",
+                        "tool": tool,
+                        "message": (
+                            "Bulk employee deletion is not enabled. No records were changed."
+                        ),
+                    },
+                    None,
+                    False,
+                )
+            return (
+                await run_action(_execution_state(state, tool, payload), db),
+                None,
+                False,
+            )
+
+        field = str(pending.get("missing_field", ""))
+        sanitized = _merge_slot_answer(
+            field, state["message"], state.get("action_payload", {}), payload
+        )
+    else:
+        selected = select_action_tool(state["message"])
+        if selected is None:
+            return (
+                {
+                    "agent": "action",
+                    "status": "error",
+                    "tool": "unknown",
+                    "message": "I could not identify the requested HR action.",
+                },
+                None,
+                False,
+            )
+        tool = selected
+        await authorize_write_tool(state, db, tool)
+        payload = _extract_initial_payload(tool, state)
+
+    missing = _missing_field(tool, payload)
+    if missing:
+        if missing != "password":
+            payload.pop("password", None)
+        result, next_pending = _pending_result(
+            tool, payload, "slots", FIELD_PROMPTS[missing], missing
+        )
+        return result, next_pending, sanitized
+
+    if tool in SENSITIVE_ACTIONS:
+        result, next_pending = _pending_result(
+            tool, payload, "confirmation", _confirmation_prompt(tool, payload)
+        )
+        return result, next_pending, sanitized
+
+    return await run_action(_execution_state(state, tool, payload), db), None, sanitized
+
+
 async def action_agent_node(
     state: AgentState, runtime: Runtime[AgentRuntimeContext]
 ) -> dict:
+    pending_action: dict[str, object] | None = state.get("pending_action")
+    sanitized = False
     try:
-        result = await run_action(state, runtime.context["db"])
+        result, pending_action, sanitized = await handle_action(
+            state, runtime.context["db"]
+        )
     except WriteToolAccessDenied as exc:
         result = {
             "agent": "action",
             "status": "denied",
             "message": str(exc),
         }
+        pending_action = None
     except (WriteToolConflict, ValidationError, HTTPException) as exc:
         if isinstance(exc, ValidationError):
             fields = sorted(
@@ -150,7 +422,11 @@ async def action_agent_node(
             "status": "error",
             "message": detail,
         }
-    return {
+    output: dict[str, object] = {
         "tool_results": [result],
         "route_trace": ["action_agent"],
+        "pending_action": pending_action,
     }
+    if sanitized:
+        output["memory_user_message"] = "[Sensitive value provided]"
+    return output

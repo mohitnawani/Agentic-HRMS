@@ -46,16 +46,20 @@ async def test_graph_routes_requests(
         }
 
     async def fake_action(state, db):
-        return {
-            "agent": "action",
-            "status": "success",
-            "tool": "test_action",
-            "message": "Action result",
-        }
+        return (
+            {
+                "agent": "action",
+                "status": "success",
+                "tool": "test_action",
+                "message": "Action result",
+            },
+            None,
+            False,
+        )
 
     monkeypatch.setattr(database_module, "run_database_query", fake_database)
     monkeypatch.setattr(rag_module, "run_policy_rag", fake_rag)
-    monkeypatch.setattr(action_module, "run_action", fake_action)
+    monkeypatch.setattr(action_module, "handle_action", fake_action)
     user_id = uuid.uuid4()
     result = await agent_graph.ainvoke(
         {
@@ -84,11 +88,13 @@ def test_graph_is_compiled_with_expected_nodes():
     assert isinstance(agent_graph, CompiledStateGraph)
     assert set(agent_graph.get_graph().nodes) == {
         "__start__",
+        "load_memory",
         "supervisor",
         "rag_agent",
         "database_agent",
         "action_agent",
         "response_generator",
+        "save_memory",
         "__end__",
     }
 
@@ -96,14 +102,18 @@ def test_graph_is_compiled_with_expected_nodes():
 @pytest.mark.asyncio
 async def test_mutation_language_takes_priority_over_database_nouns(monkeypatch):
     async def fake_action(state, db):
-        return {
-            "agent": "action",
-            "status": "success",
-            "tool": "test_action",
-            "message": "Action result",
-        }
+        return (
+            {
+                "agent": "action",
+                "status": "success",
+                "tool": "test_action",
+                "message": "Action result",
+            },
+            None,
+            False,
+        )
 
-    monkeypatch.setattr(action_module, "run_action", fake_action)
+    monkeypatch.setattr(action_module, "handle_action", fake_action)
     result = await agent_graph.ainvoke(
         {
             "user_id": uuid.uuid4(),

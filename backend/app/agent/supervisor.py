@@ -41,8 +41,11 @@ def classify_intent(message: str) -> AgentIntent:
 
 
 def supervisor_node(state: AgentState) -> dict:
+    intent: AgentIntent = (
+        "action" if state.get("pending_action") else classify_intent(state["message"])
+    )
     return {
-        "intent": classify_intent(state["message"]),
+        "intent": intent,
         "route_trace": ["supervisor"],
     }
 

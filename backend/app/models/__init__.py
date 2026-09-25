@@ -5,6 +5,7 @@ from app.models.role import RoleEnum
 from app.models.user import User
 from app.models.attendance import Attendance, AttendanceStatus
 from app.models.policy_document import PolicyDocument
+from app.models.document_chunk import DocumentChunk
 from app.models.holiday import Holiday
 from app.models.announcement import Announcement
 from app.models.leave import (
@@ -27,6 +28,7 @@ __all__ = [
     "LeaveRequestStatus",
     "LeaveType",
     "PolicyDocument",
+    "DocumentChunk",
     "Holiday",
     "Announcement",
 ]

@@ -66,7 +66,9 @@ class EmployeeRead(BaseModel):
     phone: str | None
     date_of_joining: date
     department_id: uuid.UUID | None
+    department_name: str | None = None
     designation_id: uuid.UUID | None
+    designation_name: str | None = None
     photo_url: str | None = None
     is_active: bool = True
     employee_code: str | None = None

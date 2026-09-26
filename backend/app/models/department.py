@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.designation import Designation
     from app.models.employee import Employee
 
 
@@ -18,3 +19,4 @@ class Department(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     employees: Mapped[list["Employee"]] = relationship(back_populates="department")
+    designations: Mapped[list["Designation"]] = relationship(back_populates="department")

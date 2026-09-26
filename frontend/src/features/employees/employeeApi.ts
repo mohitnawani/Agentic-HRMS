@@ -10,7 +10,9 @@ export interface Employee {
   phone: string | null;
   date_of_joining: string;
   department_id: string | null;
+  department_name: string | null;
   designation_id: string | null;
+  designation_name: string | null;
   photo_url: string | null;
   is_active: boolean;
   employee_code: string | null;

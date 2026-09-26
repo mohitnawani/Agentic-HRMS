@@ -24,11 +24,15 @@ function FieldRow({ icon, label, value }: { icon: ReactNode; label: string; valu
 
 export default function ProfileView({ employee, actions }: { employee: Employee; actions?: ReactNode }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Work Profile");
+
+  // Prefer server-resolved names; fall back to local lookups for stale caches.
   const { data: departments } = useDepartments();
   const { data: designations } = useDesignations();
 
-  const deptName = departments?.find((d) => d.id === employee.department_id)?.name ?? "—";
-  const desigTitle = designations?.find((d) => d.id === employee.designation_id)?.title ?? "—";
+  const deptName = employee.department_name
+    ?? departments?.find((d) => d.id === employee.department_id)?.name ?? "—";
+  const desigTitle = employee.designation_name
+    ?? designations?.find((d) => d.id === employee.designation_id)?.title ?? "—";
 
   return (
     <div className="flex flex-col md:flex-row rounded-lg border overflow-hidden">

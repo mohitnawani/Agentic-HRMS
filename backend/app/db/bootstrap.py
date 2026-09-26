@@ -34,10 +34,12 @@ async def _get_or_create_department(session, name: str) -> Department:
     return department
 
 
-async def _get_or_create_designation(session, title: str) -> Designation:
+async def _get_or_create_designation(
+    session, title: str, department: Department
+) -> Designation:
     designation = await session.scalar(select(Designation).where(Designation.title == title))
     if designation is None:
-        designation = Designation(title=title)
+        designation = Designation(title=title, department_id=department.id)
         session.add(designation)
         await session.flush()
     return designation
@@ -74,22 +76,93 @@ def _admin_credentials() -> tuple[str, str] | None:
 
 
 # ---------------------------------------------------------------------------
+# Organization structure: system roles control permissions (Admin/HR/Employee
+# in RoleEnum); departments are org units; designations are job titles that
+# always belong to exactly one department.
+# ---------------------------------------------------------------------------
+
+DEPARTMENTS: tuple[str, ...] = (
+    "Human Resources",
+    "Engineering / IT",
+    "Finance",
+    "Sales",
+    "Marketing",
+    "Operations",
+    "Customer Support",
+    "Administration",
+)
+
+# department name -> job titles inside it.
+DESIGNATIONS: dict[str, tuple[str, ...]] = {
+    "Human Resources": (
+        "HR Manager",
+        "HR Executive",
+        "Recruiter",
+        "Talent Acquisition Specialist",
+    ),
+    "Engineering / IT": (
+        "Engineering Manager",
+        "Tech Lead",
+        "Software Engineer",
+        "Backend Developer",
+        "Frontend Developer",
+        "Full-Stack Developer",
+        "QA Engineer",
+        "DevOps Engineer",
+    ),
+    "Finance": (
+        "Finance Manager",
+        "Accountant",
+        "Payroll Executive",
+        "Financial Analyst",
+    ),
+    "Sales": (
+        "Sales Manager",
+        "Sales Executive",
+        "Business Development Executive",
+        "Account Manager",
+    ),
+    "Marketing": (
+        "Marketing Manager",
+        "Digital Marketing Executive",
+        "Content Executive",
+        "SEO Specialist",
+    ),
+    "Operations": (
+        "Operations Manager",
+        "Operations Executive",
+        "Project Coordinator",
+    ),
+    "Customer Support": (
+        "Support Manager",
+        "Customer Support Executive",
+        "Technical Support Executive",
+    ),
+    "Administration": (
+        "Admin Manager",
+        "Office Administrator",
+        "Administrative Executive",
+    ),
+}
+
+# ---------------------------------------------------------------------------
 # Demo seed data (fresh deploys only; every insert is get-or-create).
 # ---------------------------------------------------------------------------
 
 DEMO_PASSWORD = "DemoPass123!"
 
-# email, role, first name, last name, department key, designation key,
-# employee code, date of joining.
+# email, system role, first name, last name, department, designation,
+# employee code, date of joining. HR uses the HR role in Human Resources;
+# everyone else uses the Employee role in their own department.
 DEMO_TEAM: tuple[tuple[str, RoleEnum, str, str, str, str, str, date], ...] = (
-    ("admin.demo@company.com", RoleEnum.ADMIN, "Vikram", "Malhotra", "hr", "manager", "EMP-1001", date(2022, 4, 1)),
-    ("hr.demo@company.com", RoleEnum.HR, "Priya", "Nair", "hr", "hr_exec", "EMP-1002", date(2023, 1, 15)),
-    ("rahul.verma@company.com", RoleEnum.EMPLOYEE, "Rahul", "Verma", "eng", "swe", "EMP-1003", date(2023, 6, 1)),
-    ("amit.patel@company.com", RoleEnum.EMPLOYEE, "Amit", "Patel", "eng", "swe", "EMP-1004", date(2023, 9, 12)),
-    ("vaishali.gupta@company.com", RoleEnum.EMPLOYEE, "Vaishali", "Gupta", "eng", "swe", "EMP-1005", date(2024, 2, 5)),
-    ("sneha.reddy@company.com", RoleEnum.EMPLOYEE, "Sneha", "Reddy", "hr", "hr_exec", "EMP-1006", date(2024, 5, 20)),
-    ("arjun.mehta@company.com", RoleEnum.EMPLOYEE, "Arjun", "Mehta", "eng", "swe", "EMP-1007", date(2024, 8, 11)),
-    ("kavya.iyer@company.com", RoleEnum.EMPLOYEE, "Kavya", "Iyer", "eng", "swe", "EMP-1008", date(2025, 3, 3)),
+    ("admin.demo@company.com", RoleEnum.ADMIN, "Vikram", "Malhotra", "Administration", "Admin Manager", "EMP-1001", date(2022, 4, 1)),
+    ("hr.demo@company.com", RoleEnum.HR, "Priya", "Nair", "Human Resources", "HR Manager", "EMP-1002", date(2023, 1, 15)),
+    ("rahul.verma@company.com", RoleEnum.EMPLOYEE, "Rahul", "Verma", "Engineering / IT", "Backend Developer", "EMP-1003", date(2023, 6, 1)),
+    ("amit.patel@company.com", RoleEnum.EMPLOYEE, "Amit", "Patel", "Engineering / IT", "Frontend Developer", "EMP-1004", date(2023, 9, 12)),
+    ("vaishali.gupta@company.com", RoleEnum.EMPLOYEE, "Vaishali", "Gupta", "Finance", "Accountant", "EMP-1005", date(2024, 2, 5)),
+    ("sneha.reddy@company.com", RoleEnum.EMPLOYEE, "Sneha", "Reddy", "Human Resources", "Recruiter", "EMP-1006", date(2024, 5, 20)),
+    ("arjun.mehta@company.com", RoleEnum.EMPLOYEE, "Arjun", "Mehta", "Sales", "Sales Executive", "EMP-1007", date(2024, 8, 11)),
+    ("kavya.iyer@company.com", RoleEnum.EMPLOYEE, "Kavya", "Iyer", "Marketing", "Digital Marketing Executive", "EMP-1008", date(2025, 3, 3)),
 )
 
 DEMO_HOLIDAYS: tuple[tuple[str, date], ...] = (
@@ -177,7 +250,13 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
     demo_hash = hash_password(DEMO_PASSWORD)
     employees_by_email: dict[str, Employee] = {}
 
-    for email, role, first, last, dept_key, desig_key, code, doj in DEMO_TEAM:
+    for email, role, first, last, dept_name, desig_title, code, doj in DEMO_TEAM:
+        department = departments[dept_name]
+        designation = designations[desig_title]
+        if designation.department_id != department.id:
+            raise RuntimeError(
+                f"Demo data error: {desig_title} does not belong to {dept_name}"
+            )
         user = await _get_or_create_user(session, email, role, demo_hash)
         employee = await _ensure_employee(
             session,
@@ -185,8 +264,8 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
             first,
             last,
             doj,
-            departments[dept_key].id,
-            designations[desig_key].id,
+            department.id,
+            designation.id,
             code,
         )
         await _ensure_leave_balances(session, employee, leave_types, today.year)
@@ -300,15 +379,20 @@ async def bootstrap() -> None:
     credentials = _admin_credentials()
     today = datetime.now(UTC).date()
     async with async_session() as session:
-        hr_department = await _get_or_create_department(session, "Human Resources")
-        engineering = await _get_or_create_department(session, "Engineering")
-        manager = await _get_or_create_designation(session, "Manager")
-        hr_exec = await _get_or_create_designation(session, "HR Executive")
-        swe = await _get_or_create_designation(session, "Software Engineer")
+        departments: dict[str, Department] = {}
+        for dept_name in DEPARTMENTS:
+            departments[dept_name] = await _get_or_create_department(session, dept_name)
+        designations: dict[str, Designation] = {}
+        for dept_name, titles in DESIGNATIONS.items():
+            for title in titles:
+                designations[title] = await _get_or_create_designation(
+                    session, title, departments[dept_name]
+                )
         leave_types = [
             await _get_or_create_leave_type(session, "Casual Leave", 12),
             await _get_or_create_leave_type(session, "Sick Leave", 6),
         ]
+        admin_manager = designations["Admin Manager"]
 
         if credentials is not None:
             email, password = credentials
@@ -338,8 +422,8 @@ async def bootstrap() -> None:
                     first_name="System",
                     last_name="Administrator",
                     date_of_joining=today,
-                    department_id=hr_department.id,
-                    designation_id=manager.id,
+                    department_id=departments["Administration"].id,
+                    designation_id=admin_manager.id,
                 )
                 session.add(employee)
                 await session.flush()
@@ -358,8 +442,8 @@ async def bootstrap() -> None:
         if settings.seed_demo_data:
             await _seed_demo_data(
                 session,
-                departments={"hr": hr_department, "eng": engineering},
-                designations={"manager": manager, "hr_exec": hr_exec, "swe": swe},
+                departments=departments,
+                designations=designations,
                 leave_types=leave_types,
                 today=today,
             )

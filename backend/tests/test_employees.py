@@ -226,3 +226,43 @@ async def test_employee_rejects_bad_phone_and_blank_names(client, admin_token):
     }
     assert (await client.post("/api/v1/employees", json={**base, "phone": "111"}, headers=h)).status_code == 422
     assert (await client.post("/api/v1/employees", json={**base, "first_name": "   "}, headers=h)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_designation_must_belong_to_department(client, admin_token):
+    h = {'Authorization': f'Bearer {admin_token}'}
+    departments = (await client.get('/api/v1/departments', headers=h)).json()
+    designations = (await client.get('/api/v1/designations', headers=h)).json()
+    hr_dept = next(d for d in departments if d['name'] == 'Human Resources')
+    backend_dev = next(d for d in designations if d['title'] == 'Backend Developer')
+    assert backend_dev['department_name'] == 'Engineering / IT'
+
+    base = {
+        'email': f'mismatch_{uuid.uuid4().hex[:6]}@example.com', 'password': 'testpass123',
+        'first_name': 'Mismatch', 'last_name': 'Case',
+        'date_of_joining': '2026-09-15',
+    }
+    bad = await client.post('/api/v1/employees', json={
+        **base, 'department_id': hr_dept['id'], 'designation_id': backend_dev['id'],
+    }, headers=h)
+    assert bad.status_code == 400
+    assert 'does not belong' in bad.json()['detail']
+
+    ok = await client.post('/api/v1/employees', json={
+        **base, 'designation_id': backend_dev['id'],
+    }, headers=h)
+    assert ok.status_code == 200
+    assert ok.json()['department_id'] == backend_dev['department_id']
+
+
+@pytest.mark.asyncio
+async def test_designation_requires_department(client, admin_token):
+    h = {'Authorization': f'Bearer {admin_token}'}
+    missing = await client.post('/api/v1/designations', json={'title': 'Lone Title'}, headers=h)
+    assert missing.status_code == 422
+    bad_dept = await client.post(
+        '/api/v1/designations',
+        json={'title': 'Lone Title', 'department_id': '00000000-0000-0000-0000-000000000000'},
+        headers=h,
+    )
+    assert bad_dept.status_code == 404

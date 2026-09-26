@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.models.department import Department
+from app.models.designation import Designation
 from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeUpdate
@@ -32,7 +34,24 @@ def _looks_like_image(contents: bytes, extension: str) -> bool:
     return False
 
 
-def _to_read_schema(employee, user: User) -> EmployeeRead:
+async def _org_names(
+    db: AsyncSession, department_id, designation_id
+) -> tuple[str | None, str | None]:
+    dept_name = (
+        await db.scalar(select(Department.name).where(Department.id == department_id))
+        if department_id is not None
+        else None
+    )
+    desig_name = (
+        await db.scalar(select(Designation.title).where(Designation.id == designation_id))
+        if designation_id is not None
+        else None
+    )
+    return dept_name, desig_name
+
+
+async def _to_read_schema(employee, user: User, db: AsyncSession) -> EmployeeRead:
+    dept_name, desig_name = await _org_names(db, employee.department_id, employee.designation_id)
     return EmployeeRead(
         id=employee.id,
         user_id=employee.user_id,
@@ -43,7 +62,9 @@ def _to_read_schema(employee, user: User) -> EmployeeRead:
         phone=employee.phone,
         date_of_joining=employee.date_of_joining,
         department_id=employee.department_id,
+        department_name=dept_name,
         designation_id=employee.designation_id,
+        designation_name=desig_name,
         photo_url=employee.photo_url,
         is_active=user.is_active,
         employee_code=employee.employee_code,
@@ -70,7 +91,7 @@ async def create_employee(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create admin accounts")
     employee = await employee_service.create_employee(db, data)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
-    return _to_read_schema(employee, user_result.scalar_one())
+    return await _to_read_schema(employee, user_result.scalar_one(), db)
 
 
 @router.get("", response_model=list[EmployeeRead], dependencies=[Depends(require_permission("employee:read_all"))])
@@ -79,21 +100,21 @@ async def list_employees(department_id: uuid.UUID | None = Query(None), db: Asyn
     results = []
     for emp in employees:
         user_result = await db.execute(select(User).where(User.id == emp.user_id))
-        results.append(_to_read_schema(emp, user_result.scalar_one()))
+        results.append(await _to_read_schema(emp, user_result.scalar_one(), db))
     return results
 
 
 @router.get("/me", response_model=EmployeeRead, dependencies=[Depends(require_permission("employee:read_self"))])
 async def get_my_profile(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     employee = await employee_service.get_employee_by_user_id(db, current_user.id)
-    return _to_read_schema(employee, current_user)
+    return await _to_read_schema(employee, current_user, db)
 
 
 @router.get("/{employee_id}", response_model=EmployeeRead, dependencies=[Depends(require_permission("employee:read_all"))])
 async def get_employee(employee_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     employee = await employee_service.get_employee(db, employee_id)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
-    return _to_read_schema(employee, user_result.scalar_one())
+    return await _to_read_schema(employee, user_result.scalar_one(), db)
 
 
 @router.patch("/{employee_id}", response_model=EmployeeRead, dependencies=[Depends(require_permission("employee:update"))])
@@ -105,7 +126,7 @@ async def update_employee(
 ):
     employee = await employee_service.update_employee(db, employee_id, data, current_user)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
-    return _to_read_schema(employee, user_result.scalar_one())
+    return await _to_read_schema(employee, user_result.scalar_one(), db)
 
 
 @router.delete("/{employee_id}", status_code=204, dependencies=[Depends(require_permission("employee:delete"))])
@@ -157,4 +178,4 @@ async def upload_employee_photo(
         )
     employee = await employee_service.set_employee_photo(db, employee_id, result["secure_url"])
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
-    return _to_read_schema(employee, user_result.scalar_one())
+    return await _to_read_schema(employee, user_result.scalar_one(), db)

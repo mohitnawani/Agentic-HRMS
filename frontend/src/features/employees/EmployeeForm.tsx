@@ -60,15 +60,21 @@ export default function EmployeeForm() {
   const role = useAppSelector((s) => s.auth.role);
   const { data: departments } = useDepartments();
   const { data: designations } = useDesignations();
+
+  const { register, handleSubmit, control, trigger, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { role: "employee" },
+  });
+
+  // Cascading select: designations shown belong to the chosen department.
+  const selectedDepartmentId = watch("department_id");
+  const visibleDesignations = selectedDepartmentId
+    ? designations?.filter((d) => d.department_id === selectedDepartmentId)
+    : designations;
   const createEmployee = useCreateEmployee();
   const uploadPhoto = useUploadPhoto();
   const [step, setStep] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
-
-  const { register, handleSubmit, control, trigger, formState: { errors, isSubmitting } } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { role: "employee" },
-  });
 
   const next = async () => {
     if (await trigger(STEP_FIELDS[step])) setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -133,7 +139,14 @@ export default function EmployeeForm() {
                       control={control}
                       name="department_id"
                       render={({ field }) => (
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            // Reset designation: it must belong to the new department.
+                            setValue("designation_id", undefined);
+                          }}
+                          value={field.value}
+                        >
                           <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
                           <SelectContent>
                             {departments?.map((d) => (
@@ -151,15 +164,18 @@ export default function EmployeeForm() {
                       name="designation_id"
                       render={({ field }) => (
                         <Select onValueChange={field.onChange} value={field.value}>
-                          <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={selectedDepartmentId ? "Select designation" : "Pick a department first"} /></SelectTrigger>
                           <SelectContent>
-                            {designations?.map((d) => (
+                            {visibleDesignations?.map((d) => (
                               <SelectItem key={d.id} value={d.id}>{d.title}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     />
+                    {selectedDepartmentId && visibleDesignations?.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No designations in this department yet — add one under Administration → Designations.</p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

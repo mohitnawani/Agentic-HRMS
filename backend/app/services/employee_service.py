@@ -26,12 +26,25 @@ async def _ensure_department(db: AsyncSession, department_id: uuid.UUID | None) 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
 
 
-async def _ensure_designation(db: AsyncSession, designation_id: uuid.UUID | None) -> None:
+async def _ensure_designation(db: AsyncSession, designation_id: uuid.UUID | None) -> Designation | None:
     if designation_id is None:
-        return
-    exists = await db.scalar(select(Designation.id).where(Designation.id == designation_id))
-    if exists is None:
+        return None
+    designation = await db.scalar(select(Designation).where(Designation.id == designation_id))
+    if designation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Designation not found")
+    return designation
+
+
+def _ensure_designation_in_department(
+    designation: Designation | None, department_id: uuid.UUID | None
+) -> None:
+    """A designation always belongs to exactly one department."""
+    if designation is not None and department_id is not None:
+        if designation.department_id != department_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Designation does not belong to the selected department",
+            )
 
 
 def _validate_dates(date_of_birth: date | None, date_of_joining: date | None) -> None:
@@ -68,9 +81,16 @@ async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     await _ensure_department(db, data.department_id)
-    await _ensure_designation(db, data.designation_id)
+    designation = await _ensure_designation(db, data.designation_id)
     await _ensure_employee_code_free(db, data.employee_code)
     _validate_dates(data.date_of_birth, data.date_of_joining)
+    # One primary department + one primary designation; inherit the
+    # department from the designation when only it is provided.
+    department_id = data.department_id
+    if designation is not None:
+        if department_id is None:
+            department_id = designation.department_id
+        _ensure_designation_in_department(designation, department_id)
 
     user = User(
         id=uuid.uuid4(),
@@ -88,7 +108,7 @@ async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
             last_name=data.last_name,
             phone=data.phone,
             date_of_joining=data.date_of_joining,
-            department_id=data.department_id,
+            department_id=department_id,
             designation_id=data.designation_id,
             employee_code=data.employee_code,
             date_of_birth=data.date_of_birth,
@@ -152,7 +172,10 @@ async def update_employee(
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(employee, field, value)
     await _ensure_department(db, employee.department_id)
-    await _ensure_designation(db, employee.designation_id)
+    designation = await _ensure_designation(db, employee.designation_id)
+    if designation is not None and employee.department_id is None:
+        employee.department_id = designation.department_id
+    _ensure_designation_in_department(designation, employee.department_id)
     await _ensure_employee_code_free(db, employee.employee_code, exclude_id=employee.id)
     _validate_dates(employee.date_of_birth, employee.date_of_joining)
     try:

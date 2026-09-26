@@ -10,13 +10,14 @@ import PageHeader from "@/components/PageHeader";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import { useAppSelector } from "@/store/hooks";
 import { useDepartments } from "@/features/departments/useDepartments";
+import { useDesignations } from "@/features/designations/useDesignations";
 import { useEmployee, useUpdateEmployee, useUploadPhoto } from "./useEmployees";
 import ProfileView from "./ProfileView";
 import { cn } from "@/lib/utils";
 
 const EDIT_STEPS = ["Work Profile", "Personal Info", "Banking", "Documents"] as const;
 const EDIT_STEP_FIELDS: Record<number, (keyof EditValues)[]> = {
-  0: ["department_id", "date_of_joining", "employee_code"],
+  0: ["department_id", "designation_id", "date_of_joining", "employee_code"],
   1: ["first_name", "last_name", "phone", "emergency_contact", "date_of_birth", "gender", "address", "city", "photo"],
   2: ["bank_name", "account_number", "ifsc_code"],
   3: ["id_proof_type", "id_proof_number"],
@@ -24,7 +25,7 @@ const EDIT_STEP_FIELDS: Record<number, (keyof EditValues)[]> = {
 
 interface EditValues {
   first_name: string; last_name: string; phone: string;
-  date_of_joining: string; department_id: string; photo?: FileList;
+  date_of_joining: string; department_id: string; designation_id: string; photo?: FileList;
   employee_code: string; date_of_birth: string; gender: string;
   address: string; city: string; emergency_contact: string;
   bank_name: string; account_number: string; ifsc_code: string;
@@ -33,7 +34,7 @@ interface EditValues {
 
 const toEditValues = (e: {
   first_name: string; last_name: string; phone: string | null;
-  date_of_joining: string; department_id: string | null;
+  date_of_joining: string; department_id: string | null; designation_id: string | null;
   employee_code: string | null; date_of_birth: string | null; gender: string | null;
   address: string | null; city: string | null; emergency_contact: string | null;
   bank_name: string | null; account_number: string | null; ifsc_code: string | null;
@@ -44,6 +45,7 @@ const toEditValues = (e: {
   phone: e.phone ?? "",
   date_of_joining: e.date_of_joining,
   department_id: e.department_id ?? "",
+  designation_id: e.designation_id ?? "",
   employee_code: e.employee_code ?? "",
   date_of_birth: e.date_of_birth ?? "",
   gender: e.gender ?? "",
@@ -62,12 +64,18 @@ export default function EmployeeDetailPage() {
   const role = useAppSelector((s) => s.auth.role);
   const { data: employee, isLoading, isError } = useEmployee(id ?? "");
   const { data: departments } = useDepartments();
+  const { data: designations } = useDesignations();
   const updateEmployee = useUpdateEmployee();
   const uploadPhoto = useUploadPhoto();
   const [editing, setEditing] = useState(false);
   const [estep, setEstep] = useState(0);
 
-  const { register, handleSubmit, control, reset, trigger } = useForm<EditValues>();
+  const { register, handleSubmit, control, reset, trigger, watch, setValue } = useForm<EditValues>();
+
+  const editDepartmentId = watch("department_id");
+  const editDesignations = editDepartmentId
+    ? designations?.filter((d) => d.department_id === editDepartmentId)
+    : designations;
 
   // Admin edits anyone; HR edits HR/employee profiles but never admin profiles.
   const canEdit =
@@ -83,14 +91,18 @@ export default function EmployeeDetailPage() {
   };
 
   const onSave = async (values: EditValues) => {
-    const { photo, department_id, ...rest } = values;
+    const { photo, department_id, designation_id, ...rest } = values;
     const data: { [K in keyof typeof rest]?: (typeof rest)[K] | undefined } = { ...rest };
     for (const k of Object.keys(data) as (keyof typeof data)[]) {
       if (data[k] === "") data[k] = undefined;
     }
     await updateEmployee.mutateAsync({
       id: employee.id,
-      data: { ...data, department_id: department_id || undefined },
+      data: {
+        ...data,
+        department_id: department_id || undefined,
+        designation_id: designation_id || undefined,
+      },
     });
     const file = photo?.[0];
     if (file) {
@@ -135,7 +147,13 @@ export default function EmployeeDetailPage() {
                       control={control}
                       name="department_id"
                       render={({ field }) => (
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setValue("designation_id", "");
+                          }}
+                          value={field.value}
+                        >
                           <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
                           <SelectContent>
                             {departments?.map((d) => (
@@ -146,6 +164,25 @@ export default function EmployeeDetailPage() {
                       )}
                     />
                   </div>
+                  <div className="space-y-1">
+                    <Label>Designation</Label>
+                    <Controller
+                      control={control}
+                      name="designation_id"
+                      render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                          <SelectContent>
+                            {editDesignations?.map((d) => (
+                              <SelectItem key={d.id} value={d.id}>{d.title}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Date of Joining</Label>
                     <Input type="date" {...register("date_of_joining", { required: true })} />

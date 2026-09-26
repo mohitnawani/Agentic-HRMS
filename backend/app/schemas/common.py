@@ -39,3 +39,21 @@ EmailT = Annotated[
     BeforeValidator(normalize_email),
     AfterValidator(validate_email),
 ]
+
+
+def validate_password(value: str) -> str:
+    """One password policy for every account entry point (REST + agent chat).
+
+    Minimum 8 characters with at least one letter and one number; capped at
+    72 bytes because bcrypt cannot hash more than that.
+    """
+    if len(value) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("Password is too long (maximum 72 bytes)")
+    if re.search(r"[A-Za-z]", value) is None or re.search(r"[0-9]", value) is None:
+        raise ValueError("Password must include at least one letter and one number")
+    return value
+
+
+PasswordT = Annotated[str, AfterValidator(validate_password)]

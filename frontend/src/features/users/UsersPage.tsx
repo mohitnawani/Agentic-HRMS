@@ -15,7 +15,7 @@ import { useUsers, useCreateUser, useActivateUser, useDeactivateUser, useUpdateU
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setEmail as setAuthenticatedEmail } from "@/store/authSlice";
 import type { ManagedRole, ManagedUser } from "./userApi";
-import { emailSchema } from "@/lib/validation";
+import { emailSchema, passwordSchema } from "@/lib/validation";
 
 const ROLE_VARIANT: Record<ManagedRole, "default" | "secondary" | "outline"> = {
   admin: "default",
@@ -25,11 +25,14 @@ const ROLE_VARIANT: Record<ManagedRole, "default" | "secondary" | "outline"> = {
 
 const createSchema = z.object({
   email: emailSchema,
-  password: z.string().min(6, "At least 6 characters"),
+  password: passwordSchema,
   role: z.enum(["admin", "hr", "employee"]),
   first_name: z.string().optional(),
   last_name: z.string().optional(),
-});
+}).refine(
+  (v) => (v.first_name?.trim() ? true : false) === (v.last_name?.trim() ? true : false),
+  { message: "Provide both first and last name, or neither", path: ["last_name"] },
+);
 
 type CreateValues = z.infer<typeof createSchema>;
 const editEmailSchema = z.object({ email: emailSchema });
@@ -131,7 +134,7 @@ export default function UsersPage() {
                 </div>
                 <div className="space-y-1">
                   <Label>Temporary Password</Label>
-                  <Input type="password" {...register("password")} />
+                  <Input type="password" autoComplete="new-password" placeholder="Min 8 chars, letter + number" {...register("password")} />
                   {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
                 </div>
                 <div className="space-y-1">

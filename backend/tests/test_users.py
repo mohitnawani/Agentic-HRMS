@@ -32,9 +32,19 @@ async def test_admin_create_user_and_login(client, admin_token):
     assert login.status_code == 200
 
     dup = await client.post("/api/v1/users", json={
-        "email": created.json()["email"].upper(), "password": "x", "role": "hr",
+        "email": created.json()["email"].upper(), "password": "testpass123", "role": "hr",
     }, headers=h)
     assert dup.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_weak_passwords(client, admin_token):
+    h = {"Authorization": f"Bearer {admin_token}"}
+    base = _new_user_payload()
+    for weak in ["x", "short1", "onlyletters", "12345678", "p" * 73]:
+        payload = {**base, "email": f"weak_{uuid.uuid4().hex[:6]}@example.com", "password": weak}
+        resp = await client.post("/api/v1/users", json=payload, headers=h)
+        assert resp.status_code == 422, weak
 
 
 @pytest.mark.asyncio

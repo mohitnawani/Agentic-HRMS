@@ -4,12 +4,12 @@ from datetime import date
 from pydantic import BaseModel
 
 from app.models.role import RoleEnum
-from app.schemas.common import EmailT
+from app.schemas.common import EmailT, PasswordT
 
 
 class EmployeeCreate(BaseModel):
     email: EmailT
-    password: str
+    password: PasswordT
     first_name: str
     last_name: str
     phone: str | None = None

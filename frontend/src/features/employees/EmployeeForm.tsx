@@ -16,11 +16,11 @@ import { useCreateEmployee, useUploadPhoto } from "./useEmployees";
 import type { EmployeeCreatePayload } from "./employeeApi";
 import { useAppSelector } from "@/store/hooks";
 import { cn } from "@/lib/utils";
-import { emailSchema } from "@/lib/validation";
+import { emailSchema, passwordSchema } from "@/lib/validation";
 
 const schema = z.object({
   email: emailSchema,
-  password: z.string().min(6, "At least 6 characters"),
+  password: passwordSchema,
   first_name: z.string().min(1, "Required"),
   last_name: z.string().min(1, "Required"),
   phone: z.string().optional(),
@@ -216,7 +216,7 @@ export default function EmployeeForm() {
                   </div>
                   <div className="space-y-1">
                     <Label>Temporary Password</Label>
-                    <Input type="password" {...register("password")} />
+                    <Input type="password" autoComplete="new-password" placeholder="Min 8 chars, letter + number" {...register("password")} />
                     {fieldError("password")}
                   </div>
                 </div>

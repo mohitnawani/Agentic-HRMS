@@ -15,3 +15,11 @@ export const emailSchema = z
       && !localPart.endsWith(".")
       && !localPart.includes("..");
   }, "Enter a valid email address, e.g. name@gmail.com");
+
+// Mirrors backend PasswordT: min 8 chars, at least one letter and one number.
+export const passwordSchema = z
+  .string()
+  .min(8, "At least 8 characters")
+  .max(72, "Password is too long")
+  .regex(/[A-Za-z]/, "Must include at least one letter")
+  .regex(/[0-9]/, "Must include at least one number");

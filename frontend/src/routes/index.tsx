@@ -34,6 +34,7 @@ export const router = createBrowserRouter([
           { path: "/employee/attendance", element: <AttendanceHistoryPage /> },
           { path: "/employee/leave", element: <LeavePage /> },
           { path: "/employee/policies", element: <PoliciesPage /> },
+          { path: "/employee/announcements", element: <AnnouncementsPage /> },
           { path: "/employee/assistant", element: <ChatPage /> },
         ],
       },

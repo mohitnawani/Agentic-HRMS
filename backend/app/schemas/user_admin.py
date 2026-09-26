@@ -3,12 +3,12 @@ import uuid
 from pydantic import BaseModel
 
 from app.models.role import RoleEnum
-from app.schemas.common import EmailT
+from app.schemas.common import EmailT, PasswordT
 
 
 class UserCreateByAdmin(BaseModel):
     email: EmailT
-    password: str
+    password: PasswordT
     role: RoleEnum
 
 class UserAdminRead(BaseModel):

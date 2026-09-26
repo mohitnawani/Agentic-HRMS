@@ -209,8 +209,20 @@ async def test_hr_edit_rules(client, admin_token):
     }, headers=h_admin)
     adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
     assert (await client.patch(
-        f"/api/v1/employees/{adm_profile}", json={"phone": "111"}, headers=h_hr
+        f"/api/v1/employees/{adm_profile}", json={"phone": "9999999998"}, headers=h_hr
     )).status_code == 403
     assert (await client.patch(
-        f"/api/v1/employees/{adm_profile}", json={"phone": "111"}, headers=h_admin
+        f"/api/v1/employees/{adm_profile}", json={"phone": "9999999998"}, headers=h_admin
     )).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_employee_rejects_bad_phone_and_blank_names(client, admin_token):
+    h = {"Authorization": f"Bearer {admin_token}"}
+    base = {
+        "email": f"bad_{uuid.uuid4().hex[:6]}@example.com", "password": "testpass123",
+        "first_name": "Bad", "last_name": "Data",
+        "date_of_joining": "2026-09-15",
+    }
+    assert (await client.post("/api/v1/employees", json={**base, "phone": "111"}, headers=h)).status_code == 422
+    assert (await client.post("/api/v1/employees", json={**base, "first_name": "   "}, headers=h)).status_code == 422

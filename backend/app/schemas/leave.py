@@ -1,15 +1,17 @@
 import uuid
 
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.leave import LeaveRequestStatus
+from app.schemas.common import StrippedStr
 
 
 class LeaveTypeCreate(BaseModel):
-    name: str
-    default_annual_days: int = 12
+    name: Annotated[StrippedStr, Field(min_length=1, max_length=100)]
+    default_annual_days: int = Field(default=12, ge=0, le=60)
 
 
 class LeaveTypeRead(BaseModel):
@@ -37,7 +39,7 @@ class LeaveRequestCreate(BaseModel):
     leave_type_id: uuid.UUID
     start_date: date
     end_date: date
-    reason: str
+    reason: Annotated[StrippedStr, Field(min_length=1, max_length=500)]
 
 
 class LeaveRequestRead(BaseModel):

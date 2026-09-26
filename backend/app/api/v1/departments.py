@@ -2,7 +2,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,10 +14,16 @@ from app.schemas.department import DepartmentCreate, DepartmentRead, DepartmentU
 router = APIRouter(prefix="/departments", tags=["departments"])
 
 
+async def _name_taken(db: AsyncSession, name: str, exclude_id: uuid.UUID | None = None) -> bool:
+    stmt = select(Department.id).where(func.lower(Department.name) == name.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(Department.id != exclude_id)
+    return await db.scalar(stmt) is not None
+
+
 @router.post("", response_model=DepartmentRead, dependencies=[Depends(require_permission("department:write"))])
 async def create_department(data: DepartmentCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(Department).where(Department.name == data.name))
-    if existing.scalar_one_or_none():
+    if await _name_taken(db, data.name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department already exists")
     dept = Department(**data.model_dump())
     db.add(dept)
@@ -44,6 +50,8 @@ async def update_department(department_id: uuid.UUID, data: DepartmentUpdate, db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(dept, field, value)
+    if data.name is not None and await _name_taken(db, dept.name, exclude_id=dept.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department already exists")
     try:
         await db.commit()
     except IntegrityError:

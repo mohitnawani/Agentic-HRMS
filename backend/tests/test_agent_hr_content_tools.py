@@ -121,7 +121,7 @@ async def test_failed_leave_confirmation_does_not_trap_next_application(
         json={"message": "confirm", "conversation_id": conversation_id},
         headers=auth(employee_token),
     )
-    assert "no leave balance" in failed.json()["answer"].lower()
+    assert "leave type not found" in failed.json()["answer"].lower()
 
     restored = await client.get(
         f"/api/v1/agent/conversations/{conversation_id}",

@@ -15,6 +15,22 @@ from app.services import policy_service as cloudinary_gate
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
+# Photo guardrails: common web image types within a sane size.
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
+
+
+def _looks_like_image(contents: bytes, extension: str) -> bool:
+    """Magic-byte check so a renamed script can't pass as a photo."""
+    if extension == ".png":
+        return contents.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension in (".jpg", ".jpeg"):
+        return contents.startswith(b"\xff\xd8\xff")
+    if extension == ".gif":
+        return contents.startswith((b"GIF87a", b"GIF89a"))
+    if extension == ".webp":
+        return contents.startswith(b"RIFF") and contents[8:12] == b"WEBP"
+    return False
+
 
 def _to_read_schema(employee, user: User) -> EmployeeRead:
     return EmployeeRead(
@@ -105,17 +121,35 @@ async def delete_employee(
 async def upload_employee_photo(
     employee_id: uuid.UUID, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
 ):
-    if not (file.content_type or "").startswith("image/"):
+    if not (file.content_type or "").lower().startswith("image/"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image files allowed")
+    extension = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    if extension not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Photo must be a PNG, JPG, WEBP, or GIF file",
+        )
     cloudinary_gate._ensure_configured()
 
-    contents = await file.read()
+    contents = await file.read(MAX_PHOTO_BYTES + 1)
+    if not contents:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(contents) > MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Photo exceeds the 5 MB limit",
+        )
+    if not _looks_like_image(contents, extension):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match its image extension",
+        )
     try:
         result = cloudinary.uploader.upload(
             contents,
             folder="hrms/employees",
             resource_type="image",
-            public_id=f"{uuid.uuid4()}_{file.filename}",
+            public_id=f"{uuid.uuid4()}{extension}",
         )
     except Exception as exc:
         raise HTTPException(

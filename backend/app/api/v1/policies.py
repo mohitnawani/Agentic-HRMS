@@ -18,6 +18,9 @@ from app.services import policy_service
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 
+# Cap proxied downloads so one huge file can't exhaust the worker.
+MAX_POLICY_DOWNLOAD_BYTES = 50 * 1024 * 1024
+
 
 def _download_policy_bytes(file_url: str) -> bytes:
     parsed = urlparse(file_url)
@@ -29,7 +32,7 @@ def _download_policy_bytes(file_url: str) -> bytes:
         raise ValueError("Policy storage URL is invalid.")
     request = Request(file_url, headers={"User-Agent": "Agentic-HRMS/1.0"})
     with urlopen(request, timeout=20) as upstream:
-        return upstream.read()
+        return upstream.read(MAX_POLICY_DOWNLOAD_BYTES + 1)
 
 
 def _policy_filename(title: str) -> str:

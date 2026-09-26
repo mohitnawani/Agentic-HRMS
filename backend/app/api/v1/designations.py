@@ -2,7 +2,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,10 +14,16 @@ from app.schemas.designation import DesignationCreate, DesignationRead, Designat
 router = APIRouter(prefix="/designations", tags=["designations"])
 
 
+async def _title_taken(db: AsyncSession, title: str, exclude_id: uuid.UUID | None = None) -> bool:
+    stmt = select(Designation.id).where(func.lower(Designation.title) == title.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(Designation.id != exclude_id)
+    return await db.scalar(stmt) is not None
+
+
 @router.post("", response_model=DesignationRead, dependencies=[Depends(require_permission("designation:write"))])
 async def create_designation(data: DesignationCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(Designation).where(Designation.title == data.title))
-    if existing.scalar_one_or_none():
+    if await _title_taken(db, data.title):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Designation already exists")
     desig = Designation(**data.model_dump())
     db.add(desig)
@@ -44,6 +50,8 @@ async def update_designation(designation_id: uuid.UUID, data: DesignationUpdate,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Designation not found")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(desig, field, value)
+    if data.title is not None and await _title_taken(db, desig.title, exclude_id=desig.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Designation already exists")
     try:
         await db.commit()
     except IntegrityError:

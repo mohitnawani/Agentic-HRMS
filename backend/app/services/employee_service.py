@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.attendance import Attendance
+from app.models.department import Department
+from app.models.designation import Designation
 from app.models.employee import Employee
 from app.models.leave import LeaveBalance, LeaveRequest
 from app.models.role import RoleEnum
@@ -15,10 +18,59 @@ from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 from app.services import leave_service
 
 
+async def _ensure_department(db: AsyncSession, department_id: uuid.UUID | None) -> None:
+    if department_id is None:
+        return
+    exists = await db.scalar(select(Department.id).where(Department.id == department_id))
+    if exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+
+async def _ensure_designation(db: AsyncSession, designation_id: uuid.UUID | None) -> None:
+    if designation_id is None:
+        return
+    exists = await db.scalar(select(Designation.id).where(Designation.id == designation_id))
+    if exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Designation not found")
+
+
+def _validate_dates(date_of_birth: date | None, date_of_joining: date | None) -> None:
+    today = date.today()
+    if date_of_birth is not None and date_of_birth > today:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Date of birth cannot be in the future",
+        )
+    if (
+        date_of_birth is not None
+        and date_of_joining is not None
+        and date_of_birth >= date_of_joining
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Date of birth must be before date of joining",
+        )
+
+
+async def _ensure_employee_code_free(    db: AsyncSession, employee_code: str | None, exclude_id: uuid.UUID | None = None
+) -> None:
+    if not employee_code:
+        return
+    stmt = select(Employee.id).where(Employee.employee_code == employee_code)
+    if exclude_id is not None:
+        stmt = stmt.where(Employee.id != exclude_id)
+    if await db.scalar(stmt) is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee code already in use")
+
+
 async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
     existing = await db.execute(select(User).where(func.lower(User.email) == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    await _ensure_department(db, data.department_id)
+    await _ensure_designation(db, data.designation_id)
+    await _ensure_employee_code_free(db, data.employee_code)
+    _validate_dates(data.date_of_birth, data.date_of_joining)
 
     user = User(
         id=uuid.uuid4(),
@@ -99,7 +151,15 @@ async def update_employee(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR cannot edit admin accounts")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(employee, field, value)
-    await db.commit()
+    await _ensure_department(db, employee.department_id)
+    await _ensure_designation(db, employee.designation_id)
+    await _ensure_employee_code_free(db, employee.employee_code, exclude_id=employee.id)
+    _validate_dates(employee.date_of_birth, employee.date_of_joining)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not update employee")
     await db.refresh(employee)
     return employee
 

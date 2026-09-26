@@ -23,3 +23,21 @@ export const passwordSchema = z
   .max(72, "Password is too long")
   .regex(/[A-Za-z]/, "Must include at least one letter")
   .regex(/[0-9]/, "Must include at least one number");
+
+// Mirrors backend PhoneT: 6-20 chars, digits with optional + - . ( ) spaces.
+const PHONE_PATTERN = /^[+\d][\d\s\-().]{4,18}\d$/;
+
+export const phoneSchema = z
+  .string()
+  .trim()
+  .max(20, "Phone number is too long")
+  .regex(PHONE_PATTERN, "Enter a valid phone number");
+
+export const optionalPhoneSchema = z
+  .string()
+  .trim()
+  .max(20, "Phone number is too long")
+  .refine((v) => v === "" || PHONE_PATTERN.test(v), "Enter a valid phone number");
+
+export const nameSchema = (label = "Required") =>
+  z.string().trim().min(1, label).max(100, "Too long (max 100 characters)");

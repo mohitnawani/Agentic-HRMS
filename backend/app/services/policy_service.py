@@ -27,6 +27,11 @@ from app.rag.summarization import (
 
 logger = logging.getLogger(__name__)
 
+# Upload guardrails: policies must be real PDFs within a sane size.
+MAX_POLICY_BYTES = 25 * 1024 * 1024
+ALLOWED_POLICY_EXTENSIONS = (".pdf",)
+ALLOWED_POLICY_MIME_TYPES = ("application/pdf",)
+
 
 def _ensure_configured() -> None:
     if not (
@@ -54,7 +59,37 @@ async def upload_policy(
 ) -> PolicyDocument:
     _ensure_configured()
 
-    contents = await file.read()
+    title = (title or "").strip()
+    category = (category or "").strip()
+    if not title or len(title) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Policy title is required (max 255 characters)",
+        )
+    if not category or len(category) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Policy category is required (max 100 characters)",
+        )
+
+    filename = (file.filename or "").lower()
+    content_type = (file.content_type or "").lower()
+    if not filename.endswith(ALLOWED_POLICY_EXTENSIONS) and content_type not in ALLOWED_POLICY_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are accepted for policy upload",
+        )
+
+    contents = await file.read(MAX_POLICY_BYTES + 1)
+    if not contents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
+        )
+    if len(contents) > MAX_POLICY_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Policy file exceeds the 25 MB limit",
+        )
     try:
         pages = await asyncio.to_thread(extract_pdf_pages, contents)
         chunks = chunk_pages(pages)

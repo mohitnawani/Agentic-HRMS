@@ -16,28 +16,31 @@ import { useCreateEmployee, useUploadPhoto } from "./useEmployees";
 import type { EmployeeCreatePayload } from "./employeeApi";
 import { useAppSelector } from "@/store/hooks";
 import { cn } from "@/lib/utils";
-import { emailSchema, passwordSchema } from "@/lib/validation";
+import { emailSchema, nameSchema, optionalPhoneSchema, passwordSchema } from "@/lib/validation";
 
 const schema = z.object({
   email: emailSchema,
   password: passwordSchema,
-  first_name: z.string().min(1, "Required"),
-  last_name: z.string().min(1, "Required"),
-  phone: z.string().optional(),
+  first_name: nameSchema(),
+  last_name: nameSchema(),
+  phone: optionalPhoneSchema.optional(),
   date_of_joining: z.string().min(1, "Required"),
   department_id: z.string().optional(),
   designation_id: z.string().optional(),
-  employee_code: z.string().optional(),
-  date_of_birth: z.string().optional(),
-  gender: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  emergency_contact: z.string().optional(),
-  bank_name: z.string().optional(),
-  account_number: z.string().optional(),
-  ifsc_code: z.string().optional(),
-  id_proof_type: z.string().optional(),
-  id_proof_number: z.string().optional(),
+  employee_code: z.string().trim().max(20, "Too long (max 20 characters)").optional(),
+  date_of_birth: z.string().optional().refine(
+    (v) => !v || v <= new Date().toISOString().slice(0, 10),
+    "Date of birth can't be in the future",
+  ),
+  gender: z.string().trim().max(20, "Too long").optional(),
+  address: z.string().trim().max(500, "Too long (max 500 characters)").optional(),
+  city: z.string().trim().max(100, "Too long").optional(),
+  emergency_contact: optionalPhoneSchema.optional(),
+  bank_name: z.string().trim().max(100, "Too long").optional(),
+  account_number: z.string().trim().max(50, "Too long").optional(),
+  ifsc_code: z.string().trim().max(20, "Too long").optional(),
+  id_proof_type: z.string().trim().max(50, "Too long").optional(),
+  id_proof_number: z.string().trim().max(100, "Too long").optional(),
   role: z.enum(["admin", "hr", "employee"]).optional(),
   photo: z.any().optional(),
 });

@@ -1,9 +1,11 @@
 import uuid
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.attendance import AttendanceStatus
+from app.schemas.common import StrippedStr
 
 
 class AttendanceRead(BaseModel):
@@ -22,7 +24,7 @@ class AttendanceCorrection(BaseModel):
     check_in: datetime | None = None
     check_out: datetime | None = None
     status: AttendanceStatus | None = None
-    correction_reason: str
+    correction_reason: Annotated[StrippedStr, Field(min_length=1, max_length=500)]
 
 
 class AttendanceSummary(BaseModel):

@@ -2,18 +2,49 @@ import uuid
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.employee import Employee
 from app.models.leave import LeaveBalance, LeaveRequest, LeaveRequestStatus, LeaveType
 from app.schemas.leave import LeaveRequestCreate, LeaveTypeCreate
+
+# A single request may not span more than this many days.
+MAX_LEAVE_SPAN_DAYS = 30
+
+
+async def _get_leave_type_or_404(db: AsyncSession, leave_type_id: uuid.UUID) -> LeaveType:
+    leave_type = await db.scalar(select(LeaveType).where(LeaveType.id == leave_type_id))
+    if leave_type is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leave type not found")
+    return leave_type
+
+
+async def _reject_overlapping_request(
+    db: AsyncSession, employee_id: uuid.UUID, start: date, end: date
+) -> None:
+    clash = await db.scalar(
+        select(LeaveRequest.id).where(
+            LeaveRequest.employee_id == employee_id,
+            LeaveRequest.status.in_([LeaveRequestStatus.PENDING, LeaveRequestStatus.APPROVED]),
+            LeaveRequest.start_date <= end,
+            LeaveRequest.end_date >= start,
+        )
+    )
+    if clash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An overlapping pending or approved leave request already exists",
+        )
 
 
 # --- Leave Types (Admin) ---
 
 async def create_leave_type(db: AsyncSession, data: LeaveTypeCreate) -> LeaveType:
-    existing = await db.execute(select(LeaveType).where(LeaveType.name == data.name))
+    existing = await db.execute(
+        select(LeaveType).where(func.lower(LeaveType.name) == data.name.lower())
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leave type already exists")
     leave_type = LeaveType(**data.model_dump())
@@ -78,6 +109,19 @@ async def apply_leave(db: AsyncSession, employee_id: uuid.UUID, data: LeaveReque
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_date before start_date")
 
     days_requested = _leave_days(data.start_date, data.end_date)
+    if days_requested > MAX_LEAVE_SPAN_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A single request cannot exceed {MAX_LEAVE_SPAN_DAYS} days",
+        )
+    if data.end_date.year != data.start_date.year:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Leave requests cannot span calendar years",
+        )
+
+    await _get_leave_type_or_404(db, data.leave_type_id)
+    await _reject_overlapping_request(db, employee_id, data.start_date, data.end_date)
     year = data.start_date.year
 
     balance_result = await db.execute(
@@ -127,6 +171,10 @@ async def approve_leave(db: AsyncSession, request_id: uuid.UUID, reviewer_id: uu
     if req.status != LeaveRequestStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only pending requests can be approved")
 
+    requester = await db.scalar(select(Employee.user_id).where(Employee.id == req.employee_id))
+    if requester is not None and requester == reviewer_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot approve your own leave request")
+
     days = _leave_days(req.start_date, req.end_date)
     balance_result = await db.execute(
         select(LeaveBalance).where(
@@ -152,6 +200,10 @@ async def reject_leave(db: AsyncSession, request_id: uuid.UUID, reviewer_id: uui
     req = await _get_request_or_404(db, request_id)
     if req.status != LeaveRequestStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only pending requests can be rejected")
+
+    requester = await db.scalar(select(Employee.user_id).where(Employee.id == req.employee_id))
+    if requester is not None and requester == reviewer_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot review your own leave request")
     req.status = LeaveRequestStatus.REJECTED
     req.reviewed_by = reviewer_id
     req.reviewed_at = datetime.utcnow()

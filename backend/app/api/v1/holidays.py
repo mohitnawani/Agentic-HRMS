@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,12 +15,20 @@ from app.schemas.holiday import HolidayCreate, HolidayRead, HolidayUpdate
 router = APIRouter(prefix="/holidays", tags=["holidays"])
 
 
+async def _holiday_taken(
+    db: AsyncSession, name: str, day: date, exclude_id: uuid.UUID | None = None
+) -> bool:
+    stmt = select(Holiday.id).where(
+        func.lower(Holiday.name) == name.lower(), Holiday.date == day
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Holiday.id != exclude_id)
+    return await db.scalar(stmt) is not None
+
+
 @router.post("", response_model=HolidayRead, dependencies=[Depends(require_permission("holiday:write"))])
 async def create_holiday(data: HolidayCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(
-        select(Holiday).where(Holiday.name == data.name, Holiday.date == data.date)
-    )
-    if existing.scalar_one_or_none():
+    if await _holiday_taken(db, data.name, data.date):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Holiday already exists")
     holiday = Holiday(**data.model_dump())
     db.add(holiday)
@@ -35,7 +43,7 @@ async def create_holiday(data: HolidayCreate, db: AsyncSession = Depends(get_db)
 
 @router.get("", response_model=list[HolidayRead], dependencies=[Depends(require_permission("holiday:read"))])
 async def list_holidays(
-    year: int | None = Query(None), db: AsyncSession = Depends(get_db),
+    year: int | None = Query(None, ge=2000, le=2100), db: AsyncSession = Depends(get_db),
 ):
     query = select(Holiday)
     if year:
@@ -52,6 +60,8 @@ async def update_holiday(holiday_id: uuid.UUID, data: HolidayUpdate, db: AsyncSe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holiday not found")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(holiday, field, value)
+    if await _holiday_taken(db, holiday.name, holiday.date, exclude_id=holiday.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Holiday already exists")
     try:
         await db.commit()
     except IntegrityError:

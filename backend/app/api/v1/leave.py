@@ -27,7 +27,7 @@ async def list_leave_types(db: AsyncSession = Depends(get_db)):
 
 @router.get("/balance", response_model=list[LeaveBalanceRead], dependencies=[Depends(require_permission("leave:apply"))])
 async def my_balance(
-    year: int = Query(default_factory=lambda: date.today().year),
+    year: int = Query(default_factory=lambda: date.today().year, ge=2000, le=2100),
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     employee = await employee_service.get_employee_by_user_id(db, current_user.id)

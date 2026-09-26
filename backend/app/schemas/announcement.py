@@ -1,17 +1,20 @@
 # app/schemas/announcement.py
 import uuid
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas.common import StrippedStr
 
 
 class AnnouncementCreate(BaseModel):
-    title: str
-    body: str
+    title: Annotated[StrippedStr, Field(min_length=1, max_length=255)]
+    body: Annotated[StrippedStr, Field(min_length=1, max_length=2000)]
 
 
 class AnnouncementUpdate(BaseModel):
-    title: str | None = None
-    body: str | None = None
+    title: Annotated[StrippedStr, Field(min_length=1, max_length=255)] | None = None
+    body: Annotated[StrippedStr, Field(min_length=1, max_length=2000)] | None = None
     is_active: bool | None = None
 
 

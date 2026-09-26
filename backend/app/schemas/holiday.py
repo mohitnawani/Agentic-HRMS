@@ -1,17 +1,20 @@
 # app/schemas/holiday.py
 import datetime
 import uuid
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas.common import StrippedStr
 
 
 class HolidayCreate(BaseModel):
-    name: str
+    name: Annotated[StrippedStr, Field(min_length=1, max_length=200)]
     date: datetime.date
 
 
 class HolidayUpdate(BaseModel):
-    name: str | None = None
+    name: Annotated[StrippedStr, Field(min_length=1, max_length=200)] | None = None
     date: datetime.date | None = None
 
 

@@ -1,14 +1,17 @@
 # app/schemas/designation.py
 import uuid
-from pydantic import BaseModel
+from typing import Annotated
+from pydantic import BaseModel, Field
+
+from app.schemas.common import StrippedStr
 
 
 class DesignationCreate(BaseModel):
-    title: str
+    title: Annotated[StrippedStr, Field(min_length=1, max_length=100)]
 
 
 class DesignationUpdate(BaseModel):
-    title: str | None = None
+    title: Annotated[StrippedStr, Field(min_length=1, max_length=100)] | None = None
 
 
 class DesignationRead(BaseModel):

@@ -28,7 +28,7 @@ const applySchema = z.object({
   leave_type_id: z.string().min(1, "Pick a leave type"),
   start_date: z.string().min(1, "Required"),
   end_date: z.string().min(1, "Required"),
-  reason: z.string().min(1, "Required"),
+  reason: z.string().trim().min(1, "Required").max(500, "Too long (max 500 characters)"),
 }).refine((v) => v.end_date >= v.start_date, {
   message: "End date can't be before start date",
   path: ["end_date"],

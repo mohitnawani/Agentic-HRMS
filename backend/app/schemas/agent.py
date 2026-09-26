@@ -16,7 +16,7 @@ class AgentChatRequest(BaseModel):
     message: str = Field(min_length=2, max_length=2000)
     conversation_id: uuid.UUID | None = None
     history: list[AgentHistoryMessage] = Field(default_factory=list, max_length=20)
-    parameters: dict[str, object] = Field(default_factory=dict)
+    parameters: dict[str, object] = Field(default_factory=dict, max_length=20)
 
     @field_validator("message")
     @classmethod
@@ -25,6 +25,14 @@ class AgentChatRequest(BaseModel):
         if len(normalized) < 2:
             raise ValueError("Message must contain at least 2 characters.")
         return normalized
+
+    @field_validator("parameters")
+    @classmethod
+    def bound_parameters(cls, value: dict[str, object]) -> dict[str, object]:
+        for key, item in value.items():
+            if len(key) > 64 or len(str(item)) > 2000:
+                raise ValueError("Action parameters are too large.")
+        return value
 
 
 class AgentSource(BaseModel):

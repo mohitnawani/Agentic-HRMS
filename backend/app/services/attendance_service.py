@@ -109,6 +109,15 @@ async def correct_attendance(
         record.check_in = data.check_in
     if data.check_out is not None:
         record.check_out = data.check_out
+    if (
+        record.check_in is not None
+        and record.check_out is not None
+        and record.check_out <= record.check_in
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="check_out must be after check_in",
+        )
     if data.status is not None:
         record.status = data.status
     record.corrected_by = corrected_by

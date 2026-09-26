@@ -41,6 +41,43 @@ EmailT = Annotated[
 ]
 
 
+def strip_text(value: Any) -> Any:
+    """Trim surrounding whitespace so '  HR  ' and '' are handled uniformly."""
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def empty_to_none(value: Any) -> Any:
+    """Treat blank optional strings as missing (None)."""
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+# Reusable building block: trimmed text; combine with Field(min_length,
+# max_length) per field to match the column size.
+StrippedStr = Annotated[str, BeforeValidator(strip_text)]
+
+# Optional text that becomes None when blank.
+BlankableStr = Annotated[
+    str | None, BeforeValidator(empty_to_none), BeforeValidator(strip_text)
+]
+
+PHONE_PATTERN = re.compile(r"^[+\d][\d\s\-().]{4,18}\d$")
+
+
+def validate_phone(value: str) -> str:
+    if not 6 <= len(value) <= 20 or PHONE_PATTERN.fullmatch(value) is None:
+        raise ValueError(
+            "Enter a valid phone number (6-20 characters: digits, spaces, +-().)"
+        )
+    return value
+
+
+PhoneT = Annotated[str, BeforeValidator(strip_text), AfterValidator(validate_phone)]
+
+
 def validate_password(value: str) -> str:
     """One password policy for every account entry point (REST + agent chat).
 

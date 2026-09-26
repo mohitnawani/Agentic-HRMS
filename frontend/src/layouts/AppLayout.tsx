@@ -33,6 +33,7 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "Designations", path: "/admin/designations" },
     { label: "Users", path: "/admin/users" },
     { label: "Holidays", path: "/admin/holidays" },
+    { label: "Leave", path: "/admin/leave" },
     { label: "Announcements", path: "/admin/announcements" },
     { label: "Assistant", path: "/admin/assistant" },
   ],

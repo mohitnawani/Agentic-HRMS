@@ -53,36 +53,36 @@ function DayCell({ day }: { day: CalendarDay }) {
   const num = Number(day.date.slice(8, 10));
 
   return (
-    <div className={cn("min-h-24 rounded-md border p-1.5 text-xs", CELL_BG[kind])}>
+    <div className={cn("min-h-14 rounded-md border p-1 text-xs sm:min-h-24 sm:p-1.5", CELL_BG[kind])}>
       <p className="font-medium text-gray-900">{num}</p>
       {day.before_joining || day.state === "upcoming" ? null
       : day.state === "weekend" && !day.missing_punch ? (
-        <p className="mt-1 text-gray-500">Weekend Off</p>
+        <p className="mt-1 hidden text-gray-500 sm:block">Weekend Off</p>
       ) : day.missing_punch ? (
         <>
-          <p className="mt-1 font-medium text-blue-700">Missing punch</p>
-          {day.check_in && <p className="text-gray-600">In {fmtTime(day.check_in)}</p>}
+          <p className="mt-1 truncate font-medium text-blue-700">Missing punch</p>
+          {day.check_in && <p className="hidden text-gray-600 sm:block">In {fmtTime(day.check_in)}</p>}
         </>
       ) : day.state === "on_leave" || day.state === "leave_pending" ? (
         <>
-          <p className={cn("mt-1 font-medium", STATUS_TEXT[day.state])}>{day.leave_name}</p>
-          <p className="text-gray-600">{day.leave_status === "approved" ? "Approved" : "Pending"}</p>
+          <p className={cn("mt-1 truncate font-medium", STATUS_TEXT[day.state])}>{day.leave_name}</p>
+          <p className="hidden text-gray-600 sm:block">{day.leave_status === "approved" ? "Approved" : "Pending"}</p>
         </>
       ) : day.state === "absent" ? (
-        <p className="mt-1 font-medium text-red-700">Absent</p>
+        <p className="mt-1 truncate font-medium text-red-700">Absent</p>
       ) : (
         <>
-          <p className={cn("mt-1 font-medium capitalize", STATUS_TEXT[day.state] ?? "text-gray-700")}>
+          <p className={cn("mt-1 truncate font-medium capitalize", STATUS_TEXT[day.state] ?? "text-gray-700")}>
             {day.state.replace("_", " ")}
           </p>
           {day.check_in && (
-            <p className="font-medium text-gray-900">
+            <p className="hidden truncate font-medium text-gray-900 sm:block">
               {fmtTime(day.check_in)}{day.check_out ? ` - ${fmtTime(day.check_out)}` : ""}
             </p>
           )}
           {day.overtime_minutes !== null && day.overtime_minutes !== undefined && (
             <span className={cn(
-              "mt-1 inline-block rounded-full px-1.5 py-0.5 text-[11px] font-medium",
+              "mt-1 hidden rounded-full px-1.5 py-0.5 text-[11px] font-medium sm:inline-block",
               day.overtime_minutes >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
             )}>
               {fmtOvertime(day.overtime_minutes)}
@@ -131,7 +131,7 @@ export default function MonthlyCanvas() {
       {isLoading && <div className="mt-4"><LoadingSkeleton rows={5} /></div>}
       {isError && <p className="mt-4 text-sm text-red-700">Failed to load calendar.</p>}
       {data && (
-        <div className="mt-4 grid grid-cols-7 gap-2">
+        <div className="mt-4 grid grid-cols-7 gap-1 sm:gap-2">
           {WEEKDAYS.map((d) => (
             <p key={d} className="pb-1 text-center text-xs text-gray-500">{d}</p>
           ))}

@@ -126,7 +126,7 @@ export default function EmployeeForm() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {step === 0 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Department</Label>
                     <Controller
@@ -162,7 +162,7 @@ export default function EmployeeForm() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Date of Joining</Label>
                     <Input type="date" {...register("date_of_joining")} />
@@ -196,7 +196,7 @@ export default function EmployeeForm() {
 
             {step === 1 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>First Name</Label>
                     <Input {...register("first_name")} />
@@ -208,7 +208,7 @@ export default function EmployeeForm() {
                     {fieldError("last_name")}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Email</Label>
                     <Input
@@ -225,7 +225,7 @@ export default function EmployeeForm() {
                     {fieldError("password")}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Phone</Label>
                     <Input {...register("phone")} />
@@ -235,7 +235,7 @@ export default function EmployeeForm() {
                     <Input {...register("emergency_contact")} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Date of Birth</Label>
                     <Input type="date" {...register("date_of_birth")} />
@@ -262,7 +262,7 @@ export default function EmployeeForm() {
                   <Label>Address</Label>
                   <Textarea {...register("address")} placeholder="Street, area..." />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>City</Label>
                     <Input {...register("city")} />
@@ -281,7 +281,7 @@ export default function EmployeeForm() {
                   <Label>Bank Name</Label>
                   <Input {...register("bank_name")} placeholder="HDFC Bank" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Account Number</Label>
                     <Input {...register("account_number")} />
@@ -296,7 +296,7 @@ export default function EmployeeForm() {
 
             {step === 3 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>ID Proof Type</Label>
                     <Controller

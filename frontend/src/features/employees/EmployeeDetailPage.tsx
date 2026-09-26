@@ -128,7 +128,7 @@ export default function EmployeeDetailPage() {
           <form onSubmit={handleSubmit(onSave)} className="space-y-3">
             {estep === 0 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Department</Label>
                     <Controller
@@ -159,7 +159,7 @@ export default function EmployeeDetailPage() {
             )}
             {estep === 1 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>First Name</Label>
                     <Input {...register("first_name", { required: true })} />
@@ -169,7 +169,7 @@ export default function EmployeeDetailPage() {
                     <Input {...register("last_name", { required: true })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Phone</Label>
                     <Input {...register("phone")} />
@@ -179,7 +179,7 @@ export default function EmployeeDetailPage() {
                     <Input {...register("emergency_contact")} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Date of Birth</Label>
                     <Input type="date" {...register("date_of_birth")} />
@@ -202,7 +202,7 @@ export default function EmployeeDetailPage() {
                   />
                 </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Address</Label>
                     <Input {...register("address")} />
@@ -224,7 +224,7 @@ export default function EmployeeDetailPage() {
                   <Label>Bank Name</Label>
                   <Input {...register("bank_name")} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Account Number</Label>
                     <Input {...register("account_number")} />
@@ -237,7 +237,7 @@ export default function EmployeeDetailPage() {
               </>
             )}
             {estep === 3 && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>ID Proof Type</Label>
                 <Controller

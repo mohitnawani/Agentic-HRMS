@@ -410,7 +410,7 @@ function LeaveApplicationForm({
           {selectedBalance.remaining_days} of {selectedBalance.total_days} days remaining
         </p>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
         <label>
           <span className="mb-1 block text-xs text-muted-foreground">Start date</span>
           <Input

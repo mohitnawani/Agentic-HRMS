@@ -83,7 +83,7 @@ export default function LeavePage() {
                   />
                   {errors.leave_type_id && <p className="text-sm text-destructive">{errors.leave_type_id.message}</p>}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Start</Label>
                     <Input type="date" {...register("start_date")} />
@@ -112,7 +112,7 @@ export default function LeavePage() {
       {balancesLoading ? (
         <LoadingSkeleton rows={3} />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           {balances?.map((b, i) => (
             <Card key={b.leave_type_id} tone={(["sage", "moss", "mint"] as const)[i % 3]}>
               <CardHeader><CardTitle className="text-sm text-muted-foreground">{b.leave_type_name}</CardTitle></CardHeader>

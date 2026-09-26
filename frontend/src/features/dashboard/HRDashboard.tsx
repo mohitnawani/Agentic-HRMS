@@ -16,7 +16,7 @@ export default function HRDashboard() {
     <div>
       <PageHeader title="HR Dashboard" description="Org-wide headcount, attendance, and pending approvals" />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <Card tone="sage">
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Employees</CardTitle></CardHeader>
           <CardContent><p className="text-3xl font-semibold">{data.total_employees}</p></CardContent>

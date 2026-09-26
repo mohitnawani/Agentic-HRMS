@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
+import { Badge } from "@/components/ui/badge";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import { useAppSelector } from "@/store/hooks";
@@ -52,6 +53,14 @@ export default function EmployeeListPage() {
         columns={[
           { header: "Name", render: (e) => `${e.first_name} ${e.last_name}` },
           { header: "Email", render: (e) => e.email },
+          {
+            header: "Role",
+            render: (e) => (
+              <Badge variant={e.role === "admin" ? "default" : e.role === "hr" ? "secondary" : "outline"}>
+                {e.role === "hr" ? "HR" : e.role.charAt(0).toUpperCase() + e.role.slice(1)}
+              </Badge>
+            ),
+          },
           { header: "Joined", render: (e) => e.date_of_joining },
           {
             header: "Actions",

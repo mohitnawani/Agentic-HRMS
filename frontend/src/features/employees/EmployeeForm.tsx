@@ -64,6 +64,7 @@ export default function EmployeeForm() {
 
   const { register, handleSubmit, control, trigger, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
+    defaultValues: { role: "employee" },
   });
 
   const next = async () => {
@@ -170,12 +171,12 @@ export default function EmployeeForm() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label>Role</Label>
+                  <Label>Account Role</Label>
                   <Controller
                     control={control}
                     name="role"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "employee"}>
                         <SelectTrigger><SelectValue placeholder="Employee" /></SelectTrigger>
                         <SelectContent>
                           {(role === "admin" ? ["admin", "hr", "employee"] : ["hr", "employee"]).map((r) => (
@@ -185,6 +186,7 @@ export default function EmployeeForm() {
                       </Select>
                     )}
                   />
+                  <p className="text-xs text-muted-foreground">HR accounts can manage employees and approve leaves. Only admins can create Admin accounts.</p>
                 </div>
               </>
             )}

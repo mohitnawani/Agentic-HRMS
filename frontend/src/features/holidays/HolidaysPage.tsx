@@ -7,10 +7,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import { useAppSelector } from "@/store/hooks";
 import { useHolidays, useCreateHoliday, useDeleteHoliday } from "./useHolidays";
 import type { Holiday } from "./holidayApi";
 
 export default function HolidaysPage() {
+  const role = useAppSelector((s) => s.auth.role);
+  const canWrite = role === "admin";
   const [year, setYear] = useState<string>("");
   const yearNum = year ? Number(year) : undefined;
   const { data: holidays, isLoading, isError } = useHolidays(yearNum);
@@ -30,7 +33,7 @@ export default function HolidaysPage() {
       <PageHeader
         title="Holidays"
         description="Company holiday calendar"
-        actions={
+        actions={canWrite && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>Add Holiday</Button></DialogTrigger>
             <DialogContent>
@@ -48,7 +51,7 @@ export default function HolidaysPage() {
               </form>
             </DialogContent>
           </Dialog>
-        }
+        )}
       />
 
       <div className="max-w-xs mb-4">
@@ -76,14 +79,16 @@ export default function HolidaysPage() {
           columns={[
             { header: "Name", render: (h) => h.name },
             { header: "Date", render: (h) => h.date },
-            {
-              header: "Actions",
-              render: (h) => (
-                <Button size="sm" variant="destructive" onClick={() => deleteHoliday.mutate(h.id)}>
-                  Delete
-                </Button>
-              ),
-            },
+            ...(canWrite
+              ? [{
+                  header: "Actions",
+                  render: (h: Holiday) => (
+                    <Button size="sm" variant="destructive" onClick={() => deleteHoliday.mutate(h.id)}>
+                      Delete
+                    </Button>
+                  ),
+                }]
+              : []),
           ]}
         />
       )}

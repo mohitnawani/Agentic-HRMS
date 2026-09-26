@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,7 @@ from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.role import RoleEnum
 from app.models.user import User
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserCreate, UserEmailUpdate, UserRead
 from app.services import leave_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -33,7 +33,7 @@ async def create_user(
 ):
     if data.role == RoleEnum.ADMIN and current_user.role != RoleEnum.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create admin accounts")
-    existing = await db.execute(select(User).where(User.email == data.email))
+    existing = await db.execute(select(User).where(func.lower(User.email) == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     user = User(
@@ -84,6 +84,45 @@ async def _set_active(
                 )
     user.is_active = active
     await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.patch(
+    "/{user_id}/email",
+    response_model=UserRead,
+    dependencies=[Depends(require_permission("user:manage"))],
+)
+async def update_user_email(
+    user_id: uuid.UUID,
+    data: UserEmailUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    duplicate = await db.scalar(
+        select(User.id).where(
+            func.lower(User.email) == data.email,
+            User.id != user_id,
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+
+    user.email = data.email
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
     await db.refresh(user)
     return user
 

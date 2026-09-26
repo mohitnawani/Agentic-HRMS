@@ -4,6 +4,7 @@ export interface PolicyDocument {
   id: string;
   title: string;
   category: string;
+  summary: string | null;
   file_path: string;
   uploaded_by: string;
   version: number;
@@ -27,3 +28,6 @@ export const downloadPolicyFile = (id: string) =>
   apiClient
     .get<Blob>(`/policies/${id}/download`, { responseType: "blob" })
     .then((response) => response.data);
+
+export const deletePolicy = (id: string) =>
+  apiClient.delete(`/policies/${id}`);

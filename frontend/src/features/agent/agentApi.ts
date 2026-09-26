@@ -1,5 +1,5 @@
 import { store } from "@/store/store";
-import { apiClient } from "@/lib/api-client";
+import { API_BASE_URL, apiClient } from "@/lib/api-client";
 import type {
   AgentConversation,
   AgentIntent,
@@ -12,11 +12,6 @@ export const getAgentConversation = (conversationId: string) =>
   apiClient
     .get<AgentConversation>(`/agent/conversations/${conversationId}`)
     .then((response) => response.data);
-
-const API_BASE = (
-  (import.meta.env.VITE_API_URL as string | undefined) ??
-  "http://127.0.0.1:8000/api/v1"
-).replace(/\/$/, "");
 
 interface StreamHandlers {
   onConversation: (conversationId: string) => void;
@@ -94,7 +89,7 @@ export async function streamAgentChat(
   const token = store.getState().auth.accessToken;
   if (!token) throw new Error("Your session has expired. Please sign in again.");
 
-  const response = await fetch(`${API_BASE}/agent/chat/stream`, {
+  const response = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

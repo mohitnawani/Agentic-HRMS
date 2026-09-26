@@ -32,7 +32,10 @@ async def save_memory_node(
         runtime.context["db"],
         state["user_id"],
         conversation_id,
-        state.get("memory_user_message", state["message"]),
+        state.get(
+            "memory_user_message",
+            state.get("original_message", state["message"]),
+        ),
         state["final_answer"],
         state.get("pending_action"),
     )

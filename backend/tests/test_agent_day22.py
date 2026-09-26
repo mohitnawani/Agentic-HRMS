@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.db.session import async_session
 from app.models.agent_conversation import AgentConversation
@@ -101,6 +101,53 @@ async def test_slot_follow_up_exposes_structured_ui_metadata(client, admin_token
         "stage": "slots",
         "missing_field": "email",
     }
+    await delete_conversation(conversation_id)
+
+
+@pytest.mark.asyncio
+async def test_create_employee_agent_validates_and_deduplicates_email(
+    client, admin_token
+):
+    first = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Add employee Email Validation"},
+        headers=auth(admin_token),
+    )
+    assert first.status_code == 200, first.text
+    conversation_id = first.json()["conversation_id"]
+
+    invalid = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "not-an-email", "conversation_id": conversation_id},
+        headers=auth(admin_token),
+    )
+    assert invalid.status_code == 200, invalid.text
+    assert "invalid" in invalid.json()["answer"].lower()
+
+    async with async_session() as db:
+        existing_email = await db.scalar(
+            select(User.email).where(User.role == RoleEnum.ADMIN).limit(1)
+        )
+    assert existing_email is not None
+    duplicate = await client.post(
+        "/api/v1/agent/chat",
+        json={
+            "message": existing_email.upper(),
+            "conversation_id": conversation_id,
+        },
+        headers=auth(admin_token),
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert "already registered" in duplicate.json()["answer"].lower()
+
+    unique_email = f"agent_email_{uuid.uuid4().hex[:8]}@GMAIL.COM"
+    accepted = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": unique_email, "conversation_id": conversation_id},
+        headers=auth(admin_token),
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert "joining date" in accepted.json()["answer"].lower()
     await delete_conversation(conversation_id)
 
 

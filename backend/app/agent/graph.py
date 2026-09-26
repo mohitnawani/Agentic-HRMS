@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.nodes.action_agent import action_agent_node
 from app.agent.nodes.database_agent import database_agent_node
 from app.agent.nodes.memory import load_memory_node, save_memory_node
+from app.agent.nodes.query_rewriter import query_rewriter_node
 from app.agent.nodes.rag_agent import rag_agent_node
 from app.agent.nodes.response_generator import response_generator_node
 from app.agent.state import AgentInput, AgentOutput, AgentRuntimeContext, AgentState
@@ -19,6 +20,7 @@ def build_agent_graph():
         output_schema=AgentOutput,
     )
     builder.add_node("load_memory", load_memory_node)
+    builder.add_node("query_rewriter", query_rewriter_node)
     builder.add_node("supervisor", supervisor_node)
     builder.add_node("rag_agent", rag_agent_node)
     builder.add_node("database_agent", database_agent_node)
@@ -27,7 +29,8 @@ def build_agent_graph():
     builder.add_node("save_memory", save_memory_node)
 
     builder.add_edge(START, "load_memory")
-    builder.add_edge("load_memory", "supervisor")
+    builder.add_edge("load_memory", "query_rewriter")
+    builder.add_edge("query_rewriter", "supervisor")
     builder.add_conditional_edges(
         "supervisor",
         route_from_supervisor,

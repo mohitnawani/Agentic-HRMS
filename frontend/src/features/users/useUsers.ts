@@ -30,3 +30,12 @@ export const useDeactivateUser = () => {
     onSuccess: () => invalidateUsers(qc),
   });
 };
+
+export const useUpdateUserEmail = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, email }: { id: string; email: string }) =>
+      api.updateUserEmail(id, email),
+    onSuccess: () => invalidateUsers(qc),
+  });
+};

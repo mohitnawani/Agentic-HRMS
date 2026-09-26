@@ -13,6 +13,7 @@ from app.agent.tools.read_tools import (
     get_attendance_summary,
     get_employee_details,
     get_leave_balance,
+    get_policy_catalog,
     list_employees,
 )
 
@@ -21,11 +22,17 @@ DatabaseToolName = Literal[
     "get_attendance_summary",
     "list_employees",
     "get_employee_details",
+    "get_policy_catalog",
 ]
 
 
 def select_database_tool(message: str) -> DatabaseToolName | None:
     normalized = " ".join(message.lower().split())
+    if re.search(
+        r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ies)\b",
+        normalized,
+    ):
+        return "get_policy_catalog"
     if "attendance" in normalized:
         return "get_attendance_summary"
     if "leave" in normalized and any(
@@ -85,6 +92,21 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             if data
             else "No employees were found."
         )
+    elif tool == "get_policy_catalog":
+        data = await get_policy_catalog(state, db)
+        policies = data["policies"]
+        if policies:
+            names = ", ".join(
+                f"{item['title']} ({item['category']})" for item in policies[:5]
+            )
+            remaining = len(policies) - 5
+            suffix = f", and {remaining} more" if remaining > 0 else ""
+            message = (
+                f"There are {data['count']} policy documents available: "
+                f"{names}{suffix}."
+            )
+        else:
+            message = "There are no policy documents available yet."
     else:
         data = await get_employee_details(
             state, db, employee_id=_employee_id_from_message(state["message"])

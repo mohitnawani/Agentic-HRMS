@@ -17,6 +17,7 @@ from app.models.role import RoleEnum
         ("What is the work-from-home policy?", "rag", "rag_agent"),
         ("How many leaves do I have remaining?", "database", "database_agent"),
         ("Show all employees in Engineering", "database", "database_agent"),
+        ("How many policies are available?", "database", "database_agent"),
         ("Create a new employee", "action", "action_agent"),
         ("Approve Rahul's leave request", "action", "action_agent"),
         ("Hello, what can you help me with?", "general", None),
@@ -74,7 +75,7 @@ async def test_graph_routes_requests(
     assert result["user_id"] == user_id
     assert result["role"] == RoleEnum.EMPLOYEE
     assert result["intent"] == expected_intent
-    assert result["route_trace"][0] == "supervisor"
+    assert result["route_trace"][0] == "query_rewriter"
     assert result["route_trace"][-1] == "response_generator"
     assert bool(result.get("final_answer"))
     if expected_node:
@@ -89,6 +90,7 @@ def test_graph_is_compiled_with_expected_nodes():
     assert set(agent_graph.get_graph().nodes) == {
         "__start__",
         "load_memory",
+        "query_rewriter",
         "supervisor",
         "rag_agent",
         "database_agent",

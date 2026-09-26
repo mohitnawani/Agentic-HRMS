@@ -55,6 +55,7 @@ class AgentState(TypedDict, total=False):
     user_id: Required[uuid.UUID]
     role: Required[RoleEnum]
     message: Required[str]
+    original_message: str
     history: Annotated[list[ConversationMessage], operator.add]
     conversation_id: uuid.UUID
     conversation_summary: str

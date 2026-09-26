@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Index, String, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,8 @@ class User(Base, TimestampMixin):
         SAEnum(RoleEnum, name="role_enum"), nullable=False, default=RoleEnum.EMPLOYEE
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    __table_args__ = (Index("uq_users_email_lower", func.lower(email), unique=True),)
 
     employee: Mapped["Employee"] = relationship(back_populates="user", uselist=False)
 

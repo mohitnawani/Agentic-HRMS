@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmployee, useEmployees } from "@/features/employees/useEmployees";
-import { useUploadPolicy } from "@/features/policies/usePolicies";
+import { usePolicies, useUploadPolicy } from "@/features/policies/usePolicies";
 import {
   useLeaveTypes,
   useMyBalances,
@@ -37,7 +37,9 @@ const TOOL_LABELS: Record<string, string> = {
   get_attendance_summary: "Attendance summary",
   list_employees: "Employee search",
   get_employee_details: "Employee details",
+  get_policy_catalog: "Policy catalog",
   policy_rag: "Policy search",
+  policy_summary: "Policy summary",
   create_employee: "Create employee",
   update_employee: "Update employee",
   delete_employee: "Delete employee",
@@ -46,6 +48,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_department: "Create department",
   create_announcement: "Create announcement",
   upload_policy: "Upload policy",
+  delete_policy: "Delete policy",
   apply_leave: "Apply for leave",
   cancel_leave: "Cancel leave",
   check_in: "Check in",
@@ -634,6 +637,77 @@ function PolicyUploader({
   );
 }
 
+function PolicySelector({
+  disabled,
+  onRespond,
+}: {
+  disabled: boolean;
+  onRespond: Respond;
+}) {
+  const { data: policies, isLoading, isError } = usePolicies();
+  const [documentId, setDocumentId] = useState("");
+  const [search, setSearch] = useState("");
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredPolicies = policies?.filter((policy) =>
+    [policy.title, policy.category].some((value) =>
+      value.toLowerCase().includes(normalizedSearch),
+    ),
+  );
+  const selected = policies?.find((policy) => policy.id === documentId);
+
+  const submitPolicy = (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected) return;
+    onRespond(
+      selected.id,
+      { document_id: selected.id },
+      `Selected policy: ${selected.title}`,
+    );
+  };
+
+  return (
+    <form onSubmit={submitPolicy} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
+      <label className="block text-xs font-medium text-primary">Select policy to delete</label>
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search by title or category"
+        disabled={disabled || isLoading}
+      />
+      <div className="flex gap-2">
+        <Select value={documentId} onValueChange={setDocumentId} disabled={disabled || isLoading}>
+          <SelectTrigger>
+            <SelectValue placeholder={isLoading ? "Loading policies..." : "Choose a policy"} />
+          </SelectTrigger>
+          <SelectContent>
+            {filteredPolicies?.map((policy) => (
+              <SelectItem key={policy.id} value={policy.id}>
+                {policy.title} · {policy.category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button size="sm" type="submit" disabled={disabled || !documentId}>
+          Continue
+        </Button>
+      </div>
+      {isError && <p className="text-xs text-destructive">Could not load policies.</p>}
+      {!isLoading && !isError && filteredPolicies?.length === 0 && (
+        <p className="text-xs text-muted-foreground">No policies match your search.</p>
+      )}
+      <Button
+        size="sm"
+        type="button"
+        variant="outline"
+        onClick={() => onRespond("cancel")}
+        disabled={disabled}
+      >
+        Cancel
+      </Button>
+    </form>
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -665,6 +739,13 @@ export default function ToolResultCard({
   const data = result.data;
   const balances = isRecord(data) && Array.isArray(data.balances) ? data.balances : [];
   const employees = Array.isArray(data) ? data : [];
+  const policyCatalog = isRecord(data) && isRecord(data.catalog) ? data.catalog : data;
+  const policies = isRecord(policyCatalog) && Array.isArray(policyCatalog.policies)
+    ? policyCatalog.policies
+    : [];
+  const policySummaries = isRecord(data) && Array.isArray(data.summaries)
+    ? data.summaries
+    : [];
   const details = isRecord(data)
     ? Object.entries(data).filter(
         ([key, item]) =>
@@ -766,6 +847,14 @@ export default function ToolResultCard({
 
       {interactive &&
         result.status === "needs_input" &&
+        missingField === "document_id" &&
+        result.tool === "delete_policy" &&
+        onRespond && (
+          <PolicySelector disabled={disabled} onRespond={onRespond} />
+        )}
+
+      {interactive &&
+        result.status === "needs_input" &&
         missingField === "updates" &&
         onRespond && (
           <EmployeeUpdateForm
@@ -792,7 +881,7 @@ export default function ToolResultCard({
           <PendingLeaveRequestSelector disabled={disabled} onRespond={onRespond} />
         ))}
 
-      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file", "updates", "leave_type_id", "request_id"].includes(missingField) && onRespond && (
+      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file", "document_id", "updates", "leave_type_id", "request_id"].includes(missingField) && onRespond && (
         <form onSubmit={submitSlot} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
           <label className="block text-xs font-medium text-primary">
             {FIELD_LABELS[missingField] ?? "Required information"}
@@ -844,7 +933,39 @@ export default function ToolResultCard({
         <EmployeeResults employees={employees.map((item) => (isRecord(item) ? item : {}))} />
       )}
 
-      {!balances.length && !employees.length && details.length > 0 && (
+      {policies.length > 0 && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {policies.map((item, index) => {
+            const policy = isRecord(item) ? item : {};
+            return (
+              <div key={String(policy.document_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <p className="font-medium text-primary">{String(policy.title ?? "Policy")}</p>
+                <p className="mt-0.5 capitalize text-muted-foreground">
+                  {String(policy.category ?? "Uncategorized")} · Version {String(policy.version ?? 1)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {policySummaries.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {policySummaries.map((item, index) => {
+            const policy = isRecord(item) ? item : {};
+            return (
+              <div key={String(policy.document_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-3 text-xs">
+                <p className="font-semibold text-primary">{String(policy.title ?? "Policy")}</p>
+                <p className="mt-1 whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                  {String(policy.summary ?? "No summary available.")}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!balances.length && !employees.length && !policies.length && !policySummaries.length && details.length > 0 && (
         <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           {details.slice(0, 8).map(([key, item]) => (
             <div key={key} className="flex justify-between gap-2 border-b border-border/60 py-1">

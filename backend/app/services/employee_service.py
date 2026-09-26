@@ -1,7 +1,8 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -15,7 +16,7 @@ from app.services import leave_service
 
 
 async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
-    existing = await db.execute(select(User).where(User.email == data.email))
+    existing = await db.execute(select(User).where(func.lower(User.email) == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
@@ -25,35 +26,39 @@ async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
         hashed_password=hash_password(data.password),
         role=data.role,
     )
-    db.add(user)
-    await db.flush()  # get user.id before creating employee
+    try:
+        db.add(user)
+        await db.flush()  # get user.id before creating employee
 
-    employee = Employee(
-        user_id=user.id,
-        first_name=data.first_name,
-        last_name=data.last_name,
-        phone=data.phone,
-        date_of_joining=data.date_of_joining,
-        department_id=data.department_id,
-        designation_id=data.designation_id,
-        employee_code=data.employee_code,
-        date_of_birth=data.date_of_birth,
-        gender=data.gender,
-        address=data.address,
-        city=data.city,
-        emergency_contact=data.emergency_contact,
-        bank_name=data.bank_name,
-        account_number=data.account_number,
-        ifsc_code=data.ifsc_code,
-        id_proof_type=data.id_proof_type,
-        id_proof_number=data.id_proof_number,
-    )
-    db.add(employee)
-    await db.flush()  # get employee.id for the code below
-    if not employee.employee_code:
-        count_result = await db.execute(select(Employee.id))
-        employee.employee_code = f"EMP-{len(count_result.scalars().all()):04d}"
-    await db.commit()
+        employee = Employee(
+            user_id=user.id,
+            first_name=data.first_name,
+            last_name=data.last_name,
+            phone=data.phone,
+            date_of_joining=data.date_of_joining,
+            department_id=data.department_id,
+            designation_id=data.designation_id,
+            employee_code=data.employee_code,
+            date_of_birth=data.date_of_birth,
+            gender=data.gender,
+            address=data.address,
+            city=data.city,
+            emergency_contact=data.emergency_contact,
+            bank_name=data.bank_name,
+            account_number=data.account_number,
+            ifsc_code=data.ifsc_code,
+            id_proof_type=data.id_proof_type,
+            id_proof_number=data.id_proof_number,
+        )
+        db.add(employee)
+        await db.flush()  # get employee.id for the code below
+        if not employee.employee_code:
+            count_result = await db.execute(select(Employee.id))
+            employee.employee_code = f"EMP-{len(count_result.scalars().all()):04d}"
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     await db.refresh(employee)
     await leave_service.initialize_balances_for_employee(db, employee.id)
     return employee

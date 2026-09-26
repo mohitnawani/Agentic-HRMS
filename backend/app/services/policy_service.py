@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import re
 import uuid
+from urllib.parse import unquote, urlparse
 
 import cloudinary
 import cloudinary.uploader
@@ -16,6 +18,11 @@ from app.rag.ingestion import (
     chunk_pages,
     extract_pdf_pages,
     store_policy_chunks,
+)
+from app.rag.summarization import (
+    PolicySummaryError,
+    build_extractive_summary,
+    generate_policy_summary,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,9 +88,20 @@ async def upload_policy(
         )
 
     doc = PolicyDocument(
-        title=title, category=category, file_path=secure_url, uploaded_by=uploaded_by
+        title=title,
+        category=category,
+        file_path=secure_url,
+        uploaded_by=uploaded_by,
     )
     try:
+        page_texts = [page.text for page in pages]
+        try:
+            doc.summary = await generate_policy_summary(title, category, page_texts)
+        except PolicySummaryError:
+            logger.warning(
+                "Using an extractive summary fallback for policy %s", title
+            )
+            doc.summary = build_extractive_summary(page_texts)
         db.add(doc)
         await db.flush()
         await store_policy_chunks(db, doc.id, chunks)
@@ -134,3 +152,53 @@ async def get_policy(db: AsyncSession, doc_id: uuid.UUID) -> PolicyDocument:
             status_code=status.HTTP_404_NOT_FOUND, detail="Policy document not found"
         )
     return doc
+
+
+def _cloudinary_public_id(file_url: str) -> str:
+    """Recover the raw-resource public ID stored in a Cloudinary delivery URL."""
+    parsed = urlparse(file_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not parsed.hostname.endswith("cloudinary.com")
+        or "/upload/" not in parsed.path
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Policy storage reference is invalid; the document was not deleted.",
+        )
+    resource_path = unquote(parsed.path.split("/upload/", 1)[1]).lstrip("/")
+    resource_path = re.sub(r"^v\d+/", "", resource_path)
+    if not resource_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Policy storage reference is invalid; the document was not deleted.",
+        )
+    return resource_path
+
+
+async def delete_policy(db: AsyncSession, doc_id: uuid.UUID) -> PolicyDocument:
+    """Delete the stored PDF, policy row, and cascading vector chunks."""
+    document = await get_policy(db, doc_id)
+    _ensure_configured()
+    public_id = _cloudinary_public_id(document.file_path)
+    try:
+        result = await asyncio.to_thread(
+            cloudinary.uploader.destroy,
+            public_id,
+            resource_type="raw",
+            invalidate=True,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Policy file storage is temporarily unavailable; nothing was deleted.",
+        ) from exc
+    if result.get("result") not in {"ok", "not found"}:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Policy file storage did not confirm deletion; nothing was deleted.",
+        )
+    await db.delete(document)
+    await db.commit()
+    return document

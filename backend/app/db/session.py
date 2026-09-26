@@ -1,8 +1,13 @@
 # session.py
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from app.core.config import settings
 
-engine = create_async_engine(settings.database_url, echo=True)
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.environment.lower() in {"dev", "development", "local"},
+    pool_pre_ping=True,
+)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 async def get_db():

@@ -65,6 +65,17 @@ async def list_policies(
     return await policy_service.list_policies(db, category)
 
 
+@router.delete(
+    "/{doc_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("policy:write"))],
+)
+async def delete_policy(
+    doc_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+) -> None:
+    await policy_service.delete_policy(db, doc_id)
+
+
 @router.get(
     "/{doc_id}/download",
     dependencies=[Depends(require_permission("policy:read"))],

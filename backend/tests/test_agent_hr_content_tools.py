@@ -20,6 +20,7 @@ def auth(token: str) -> dict[str, str]:
         ("add policies", "upload_policy"),
         ("Add Policies", "upload_policy"),
         ("upload policy document", "upload_policy"),
+        ("delete policy", "delete_policy"),
         ("edit user", "update_employee"),
         ("update employee", "update_employee"),
         ("delete user", "delete_employee"),

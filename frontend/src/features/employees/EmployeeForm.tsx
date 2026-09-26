@@ -16,9 +16,10 @@ import { useCreateEmployee, useUploadPhoto } from "./useEmployees";
 import type { EmployeeCreatePayload } from "./employeeApi";
 import { useAppSelector } from "@/store/hooks";
 import { cn } from "@/lib/utils";
+import { emailSchema } from "@/lib/validation";
 
 const schema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   password: z.string().min(6, "At least 6 characters"),
   first_name: z.string().min(1, "Required"),
   last_name: z.string().min(1, "Required"),
@@ -205,7 +206,12 @@ export default function EmployeeForm() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label>Email</Label>
-                    <Input type="email" {...register("email")} />
+                    <Input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="name@gmail.com"
+                      {...register("email")}
+                    />
                     {fieldError("email")}
                   </div>
                   <div className="space-y-1">

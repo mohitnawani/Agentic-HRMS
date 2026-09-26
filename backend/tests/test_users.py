@@ -16,19 +16,23 @@ def _new_user_payload(role="hr"):
 @pytest.mark.asyncio
 async def test_admin_create_user_and_login(client, admin_token):
     h = {"Authorization": f"Bearer {admin_token}"}
-    created = await client.post("/api/v1/users", json=_new_user_payload(), headers=h)
+    payload = _new_user_payload()
+    normalized_email = payload["email"]
+    payload["email"] = f"  {normalized_email.upper()}  "
+    created = await client.post("/api/v1/users", json=payload, headers=h)
     assert created.status_code == 200
     assert created.json()["role"] == "hr"
     assert created.json()["is_active"] is True
+    assert created.json()["email"] == normalized_email
 
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": created.json()["email"], "password": "testpass123"},
+        data={"username": f"  {normalized_email.upper()}  ", "password": "testpass123"},
     )
     assert login.status_code == 200
 
     dup = await client.post("/api/v1/users", json={
-        "email": created.json()["email"], "password": "x", "role": "hr",
+        "email": created.json()["email"].upper(), "password": "x", "role": "hr",
     }, headers=h)
     assert dup.status_code == 400
 
@@ -57,6 +61,61 @@ async def test_deactivate_blocks_login_and_reactivate_restores(client, admin_tok
     assert (await client.post(
         "/api/v1/auth/login", data={"username": payload["email"], "password": "testpass123"}
     )).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_updates_email_with_validation_and_uniqueness(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    first_payload = _new_user_payload(role="employee")
+    second_payload = _new_user_payload(role="employee")
+    first = await client.post("/api/v1/users", json=first_payload, headers=headers)
+    second = await client.post("/api/v1/users", json=second_payload, headers=headers)
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    user_id = first.json()["id"]
+    new_email = f"updated_{uuid.uuid4().hex[:8]}@gmail.com"
+    updated = await client.patch(
+        f"/api/v1/users/{user_id}/email",
+        json={"email": f"  {new_email.upper()}  "},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["email"] == new_email
+
+    assert (await client.post(
+        "/api/v1/auth/login",
+        data={"username": first_payload["email"], "password": first_payload["password"]},
+    )).status_code == 401
+    assert (await client.post(
+        "/api/v1/auth/login",
+        data={"username": new_email, "password": first_payload["password"]},
+    )).status_code == 200
+
+    duplicate = await client.patch(
+        f"/api/v1/users/{user_id}/email",
+        json={"email": second.json()["email"].upper()},
+        headers=headers,
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Email already registered"
+
+    invalid = await client.patch(
+        f"/api/v1/users/{user_id}/email",
+        json={"email": "not-an-email"},
+        headers=headers,
+    )
+    assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_update_user_email(client, employee_token):
+    response = await client.patch(
+        "/api/v1/users/00000000-0000-0000-0000-000000000000/email",
+        json={"email": "valid@gmail.com"},
+        headers={"Authorization": f"Bearer {employee_token}"},
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio

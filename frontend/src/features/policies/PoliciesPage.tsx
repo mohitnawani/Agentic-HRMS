@@ -5,11 +5,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import { useAppSelector } from "@/store/hooks";
-import { usePolicies, useUploadPolicy } from "./usePolicies";
+import { useDeletePolicy, usePolicies, useUploadPolicy } from "./usePolicies";
 import { downloadPolicyFile, type PolicyDocument } from "./policyApi";
 
 export default function PoliciesPage() {
@@ -17,7 +26,9 @@ export default function PoliciesPage() {
   const [category, setCategory] = useState<string>("all");
   const { data: allPolicies, isLoading, isError } = usePolicies();
   const uploadPolicy = useUploadPolicy();
+  const deletePolicy = useDeletePolicy();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<PolicyDocument | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<{
@@ -117,21 +128,65 @@ export default function PoliciesPage() {
             { header: "Category", render: (d) => d.category },
             { header: "Uploaded", render: (d) => new Date(d.created_at).toLocaleDateString() },
             {
-              header: "File",
+              header: "Actions",
               render: (d) => (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={downloadingId === d.id}
-                  onClick={() => handleDownload(d)}
-                >
-                  {downloadingId === d.id ? "Downloading..." : "Download"}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={downloadingId === d.id}
+                    onClick={() => handleDownload(d)}
+                  >
+                    {downloadingId === d.id ? "Downloading..." : "Download"}
+                  </Button>
+                  {canUpload && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setToDelete(d)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </div>
               ),
             },
           ]}
         />
       )}
+
+      <AlertDialog open={!!toDelete} onOpenChange={(nextOpen) => !nextOpen && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete policy?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes “{toDelete?.title}”, its PDF, and all indexed RAG chunks.
+              The assistant will no longer use it for answers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep policy</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deletePolicy.isPending}
+              onClick={() => {
+                if (!toDelete) return;
+                deletePolicy.mutate(toDelete.id, {
+                  onSuccess: () => setToDelete(null),
+                });
+              }}
+            >
+              {deletePolicy.isPending ? "Deleting..." : "Delete policy"}
+            </Button>
+          </AlertDialogFooter>
+          {deletePolicy.isError && (
+            <p className="text-sm text-destructive">
+              The policy could not be deleted. Nothing was removed; please try again.
+            </p>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

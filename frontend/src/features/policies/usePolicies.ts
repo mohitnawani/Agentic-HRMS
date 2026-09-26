@@ -14,3 +14,11 @@ export const useUploadPolicy = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["policies"] }),
   });
 };
+
+export const useDeletePolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.deletePolicy,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policies"] }),
+  });
+};

@@ -24,6 +24,64 @@ async def test_create_and_fetch_employee(client, admin_token):
 
 
 @pytest.mark.asyncio
+async def test_employee_email_is_normalized_and_unique_case_insensitively(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    local_part = f"emailcase_{uuid.uuid4().hex[:6]}"
+    mixed_case_email = f"  {local_part.upper()}@GMAIL.COM  "
+    payload = {
+        "email": mixed_case_email,
+        "password": "testpass123",
+        "first_name": "Email",
+        "last_name": "Case",
+        "date_of_joining": "2026-09-15",
+    }
+
+    created = await client.post("/api/v1/employees", json=payload, headers=headers)
+    assert created.status_code == 200
+    assert created.json()["email"] == f"{local_part}@gmail.com"
+
+    duplicate = await client.post(
+        "/api/v1/employees",
+        json={**payload, "email": f"{local_part}@gmail.com"},
+        headers=headers,
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Email already registered"
+
+    employee_id = created.json()["id"]
+    assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "email",
+    [
+        "plainaddress",
+        "name@",
+        "@gmail.com",
+        ".name@gmail.com",
+        "name..dots@gmail.com",
+        "name@gmail",
+        "name@-gmail.com",
+        123,
+    ],
+)
+async def test_employee_rejects_invalid_email(client, admin_token, email):
+    response = await client.post(
+        "/api/v1/employees",
+        json={
+            "email": email,
+            "password": "testpass123",
+            "first_name": "Invalid",
+            "last_name": "Email",
+            "date_of_joining": "2026-09-15",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_upload_employee_photo(client, admin_token, monkeypatch):
     monkeypatch.setattr(
         "app.api.v1.employees.cloudinary.uploader.upload",

@@ -6,9 +6,10 @@ import pytest
 from pydantic import SecretStr
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api.v1 import policies as policies_api
+from app.core.security import hash_password
 from app.db.session import async_session
 from app.models.document_chunk import EMBEDDING_DIMENSIONS, DocumentChunk
 from app.models.policy_document import PolicyDocument
@@ -271,9 +272,16 @@ async def test_policy_upload_creates_chunks_and_embeddings(
             for index, _ in enumerate(texts)
         ]
 
+    async def fake_summary(title, category, texts):
+        assert title == "Leave Policy"
+        assert category == "leave"
+        assert "Casual leave is 12 days." in texts
+        return "Employees receive 12 days of casual leave."
+
     monkeypatch.setattr(policy_service.cloudinary.uploader, "upload", fake_upload)
     monkeypatch.setattr(policy_service.cloudinary.uploader, "destroy", fake_destroy)
     monkeypatch.setattr("app.rag.ingestion.embed_policy_texts", fake_embed)
+    monkeypatch.setattr(policy_service, "generate_policy_summary", fake_summary)
 
     response = await client.post(
         "/api/v1/policies",
@@ -317,6 +325,7 @@ async def test_policy_upload_creates_chunks_and_embeddings(
         ]
         assert len(rows[0].embedding) == EMBEDDING_DIMENSIONS
         document = await db.get(PolicyDocument, document_id)
+        assert document.summary == "Employees receive 12 days of casual leave."
         await db.delete(document)
         await db.commit()
     assert destroyed == []
@@ -346,6 +355,14 @@ async def test_policy_upload_rolls_back_and_removes_file_when_embedding_fails(
     async def fail_storage(*args, **kwargs):
         raise PolicyEmbeddingError("Gemini embedding failed. Please retry later.")
 
+    async def fake_summary(*args, **kwargs):
+        return "A grounded test policy summary."
+
+    monkeypatch.setattr(
+        policy_service,
+        "generate_policy_summary",
+        fake_summary,
+    )
     monkeypatch.setattr(policy_service, "store_policy_chunks", fail_storage)
     response = await client.post(
         "/api/v1/policies",
@@ -363,3 +380,97 @@ async def test_policy_upload_rolls_back_and_removes_file_when_embedding_fails(
             )
             is None
         )
+
+
+@pytest.mark.asyncio
+async def test_hr_and_admin_can_delete_policy_but_employee_cannot(
+    client, admin_token, employee_token, monkeypatch
+):
+    hr_id = uuid.uuid4()
+    hr_email = f"policy_hr_{uuid.uuid4().hex}@test.local"
+    document_ids = [uuid.uuid4(), uuid.uuid4()]
+    async with async_session() as db:
+        hr = User(
+            id=hr_id,
+            email=hr_email,
+            hashed_password=hash_password("PolicyPass!42"),
+            role=RoleEnum.HR,
+        )
+        db.add(hr)
+        await db.flush()
+        for index, document_id in enumerate(document_ids):
+            db.add(
+                PolicyDocument(
+                    id=document_id,
+                    title=f"Deletable Policy {index}",
+                    category="test",
+                    file_path=(
+                        "https://res.cloudinary.com/demo/raw/upload/v123/"
+                        f"hrms/policies/delete-{index}"
+                    ),
+                    uploaded_by=hr_id,
+                )
+            )
+        await db.flush()
+        db.add_all(
+            [
+                DocumentChunk(
+                    document_id=document_id,
+                    chunk_index=0,
+                    page_number=1,
+                    content="Indexed policy content",
+                    embedding=[1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1),
+                )
+                for document_id in document_ids
+            ]
+        )
+        await db.commit()
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        data={"username": hr_email, "password": "PolicyPass!42"},
+    )
+    hr_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    employee_headers = {"Authorization": f"Bearer {employee_token}"}
+    destroyed: list[str] = []
+    monkeypatch.setattr(policy_service, "_ensure_configured", lambda: None)
+    monkeypatch.setattr(
+        policy_service.cloudinary.uploader,
+        "destroy",
+        lambda public_id, **kwargs: destroyed.append(public_id) or {"result": "ok"},
+    )
+
+    denied = await client.delete(
+        f"/api/v1/policies/{document_ids[0]}", headers=employee_headers
+    )
+    assert denied.status_code == 403
+
+    hr_deleted = await client.delete(
+        f"/api/v1/policies/{document_ids[0]}", headers=hr_headers
+    )
+    admin_deleted = await client.delete(
+        f"/api/v1/policies/{document_ids[1]}", headers=admin_headers
+    )
+    assert hr_deleted.status_code == 204, hr_deleted.text
+    assert admin_deleted.status_code == 204, admin_deleted.text
+    assert destroyed == [
+        "hrms/policies/delete-0",
+        "hrms/policies/delete-1",
+    ]
+
+    async with async_session() as db:
+        assert await db.get(PolicyDocument, document_ids[0]) is None
+        assert await db.get(PolicyDocument, document_ids[1]) is None
+        chunks = list(
+            (
+                await db.scalars(
+                    select(DocumentChunk).where(
+                        DocumentChunk.document_id.in_(document_ids)
+                    )
+                )
+            ).all()
+        )
+        assert chunks == []
+        await db.execute(delete(User).where(User.id == hr_id))
+        await db.commit()

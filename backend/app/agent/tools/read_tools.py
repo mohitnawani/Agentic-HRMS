@@ -1,5 +1,6 @@
 """Permission-aware, read-only HRMS tools used by the Database Agent."""
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -10,9 +11,12 @@ from app.agent.state import AgentState
 from app.core.permissions import has_permission
 from app.models.department import Department
 from app.models.designation import Designation
+from app.models.document_chunk import DocumentChunk
 from app.models.employee import Employee
+from app.models.policy_document import PolicyDocument
 from app.models.role import RoleEnum
 from app.models.user import User
+from app.rag.summarization import build_extractive_summary
 from app.services import attendance_service, leave_service
 
 
@@ -120,6 +124,122 @@ async def list_employees(
         }
         for employee, email, department, designation in rows
     ]
+
+
+async def get_policy_catalog(
+    state: AgentState, db: AsyncSession
+) -> dict[str, object]:
+    """Return policy metadata without exposing storage URLs or document contents."""
+    _, role = _actor(state)
+    _require(role, "policy:read")
+    documents = list(
+        (
+            await db.scalars(
+                select(PolicyDocument).order_by(
+                    PolicyDocument.created_at.desc(), PolicyDocument.title
+                )
+            )
+        ).all()
+    )
+    return {
+        "count": len(documents),
+        "policies": [
+            {
+                "document_id": str(document.id),
+                "title": document.title,
+                "category": document.category,
+                "version": document.version,
+                "summary": document.summary,
+                "uploaded_at": document.created_at.isoformat(),
+            }
+            for document in documents
+        ],
+    }
+
+
+async def get_policy_summaries(
+    state: AgentState, db: AsyncSession, query: str
+) -> dict[str, object]:
+    """Select policy summaries by title/category without regenerating them."""
+    _, role = _actor(state)
+    _require(role, "policy:read")
+    documents = list(
+        (
+            await db.scalars(
+                select(PolicyDocument).order_by(PolicyDocument.title)
+            )
+        ).all()
+    )
+    if not documents:
+        return {"count": 0, "summaries": [], "selection_required": False}
+
+    normalized = " ".join(query.lower().split())
+    all_requested = bool(re.search(r"\b(all|each|every)\b", normalized))
+    ignored = {
+        "a", "about", "an", "give", "me", "of", "overview", "please",
+        "policy", "policies", "summarise", "summarize", "summary", "the",
+    }
+    query_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", normalized) if token not in ignored
+    }
+    selected = documents if all_requested else []
+    if not selected and query_tokens:
+        scored = []
+        for document in documents:
+            searchable = set(
+                re.findall(
+                    r"[a-z0-9]+", f"{document.title} {document.category}".lower()
+                )
+            )
+            scored.append((len(query_tokens & searchable), document))
+        best_score = max(score for score, _ in scored)
+        if best_score:
+            selected = [document for score, document in scored if score == best_score]
+    if not selected and len(documents) == 1:
+        selected = documents
+    if not selected:
+        return {
+            "count": 0,
+            "summaries": [],
+            "selection_required": True,
+            "policies": [
+                {
+                    "document_id": str(document.id),
+                    "title": document.title,
+                    "category": document.category,
+                }
+                for document in documents
+            ],
+        }
+
+    summaries = []
+    for document in selected[:10]:
+        summary = (document.summary or "").strip()
+        if not summary:
+            chunk_texts = list(
+                (
+                    await db.scalars(
+                        select(DocumentChunk.content)
+                        .where(DocumentChunk.document_id == document.id)
+                        .order_by(DocumentChunk.chunk_index)
+                    )
+                ).all()
+            )
+            summary = build_extractive_summary(chunk_texts)
+        summaries.append(
+            {
+                "document_id": str(document.id),
+                "title": document.title,
+                "category": document.category,
+                "version": document.version,
+                "summary": summary or "No readable summary is available.",
+            }
+        )
+    return {
+        "count": len(summaries),
+        "summaries": summaries,
+        "selection_required": False,
+    }
 
 
 async def get_employee_details(

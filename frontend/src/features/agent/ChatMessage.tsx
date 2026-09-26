@@ -22,6 +22,15 @@ export default function ChatMessage({
   onRespond,
 }: ChatMessageProps) {
   const assistant = message.role === "assistant";
+  const hasStructuredPolicySummary = message.tools?.some((tool) => {
+    if (tool.tool !== "policy_summary" || tool.status !== "success") return false;
+    const data = tool.data;
+    return !Array.isArray(data)
+      && data != null
+      && Array.isArray(data.summaries)
+      && data.summaries.length > 0;
+  }) ?? false;
+
   return (
     <article className={cn("flex gap-3", !assistant && "flex-row-reverse")}>
       <span
@@ -33,24 +42,26 @@ export default function ChatMessage({
         {assistant ? <HatGlasses className="size-4" /> : <UserRound className="size-4" />}
       </span>
       <div className={cn("max-w-[88%] sm:max-w-[78%]", !assistant && "text-right")}>
-        <div
-          className={cn(
-            "inline-block whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-6",
-            assistant
-              ? message.error
-                ? "border border-destructive/20 bg-destructive/5 text-destructive"
-                : "border border-border bg-card text-foreground shadow-sm"
-              : "bg-primary text-primary-foreground",
-          )}
-        >
-          {message.content || (
-            <span className="inline-flex gap-1" aria-label="Assistant is responding">
-              <span className="size-1.5 animate-pulse rounded-full bg-current" />
-              <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
-              <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
-            </span>
-          )}
-        </div>
+        {!hasStructuredPolicySummary && (
+          <div
+            className={cn(
+              "inline-block whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-6",
+              assistant
+                ? message.error
+                  ? "border border-destructive/20 bg-destructive/5 text-destructive"
+                  : "border border-border bg-card text-foreground shadow-sm"
+                : "bg-primary text-primary-foreground",
+            )}
+          >
+            {message.content || (
+              <span className="inline-flex gap-1" aria-label="Assistant is responding">
+                <span className="size-1.5 animate-pulse rounded-full bg-current" />
+                <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
+                <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
+              </span>
+            )}
+          </div>
+        )}
         {message.tools?.map((tool, index) => (
           <ToolResultCard
             key={`${tool.tool ?? tool.agent}-${index}`}

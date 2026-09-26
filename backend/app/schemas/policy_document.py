@@ -8,6 +8,7 @@ class PolicyDocumentRead(BaseModel):
     id: uuid.UUID
     title: str
     category: str
+    summary: str | None
     file_path: str
     uploaded_by: uuid.UUID
     version: int

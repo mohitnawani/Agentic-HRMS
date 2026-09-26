@@ -1,14 +1,10 @@
 # app/schemas/user.py
 import uuid
-from datetime import date
-from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.models.role import RoleEnum
-
-# Same lenient rule as employees: allow internal company domains.
-EmailT = Annotated[str, Field(min_length=5, max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+from app.schemas.common import EmailT
 
 
 class UserCreate(BaseModel):
@@ -17,6 +13,10 @@ class UserCreate(BaseModel):
     role: RoleEnum = RoleEnum.EMPLOYEE
     first_name: str | None = None
     last_name: str | None = None
+
+
+class UserEmailUpdate(BaseModel):
+    email: EmailT
 
 
 class UserRead(BaseModel):

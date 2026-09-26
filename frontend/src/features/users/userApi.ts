@@ -24,3 +24,6 @@ export const activateUser = (id: string) =>
 
 export const deactivateUser = (id: string) =>
   apiClient.patch<ManagedUser>(`/users/${id}/deactivate`).then((r) => r.data);
+
+export const updateUserEmail = (id: string, email: string) =>
+  apiClient.patch<ManagedUser>(`/users/${id}/email`, { email }).then((r) => r.data);

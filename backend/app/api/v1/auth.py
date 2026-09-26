@@ -2,11 +2,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
 from app.core.config import settings
+from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import GoogleLoginRequest, RefreshRequest, Token
@@ -19,7 +19,8 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    normalized_email = form_data.username.strip().lower()
+    result = await db.execute(select(User).where(func.lower(User.email) == normalized_email))
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(form_data.password, user.hashed_password):
@@ -49,12 +50,13 @@ async def google_login(payload: GoogleLoginRequest, db: AsyncSession = Depends(g
         email = info.get("email")
         if not email or not info.get("email_verified"):
             raise ValueError("Email not verified by Google")
+        email = email.strip().lower()
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google credential")
 
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No company account for this Google email")

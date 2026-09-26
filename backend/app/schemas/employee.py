@@ -1,14 +1,10 @@
 import uuid
 from datetime import date
-from typing import Annotated
 
-from pydantic import BaseModel, Field
-
-# Lenient on purpose: company HRMS logins use internal domains like
-# @hrms.local, which strict validators reject as special-use names.
-EmailT = Annotated[str, Field(min_length=5, max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+from pydantic import BaseModel
 
 from app.models.role import RoleEnum
+from app.schemas.common import EmailT
 
 
 class EmployeeCreate(BaseModel):

@@ -6,7 +6,8 @@ from typing import Literal, cast
 
 from fastapi import HTTPException
 from langgraph.runtime import Runtime
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import func, select
 
 from app.agent.state import AgentRuntimeContext, AgentState, AgentToolResult
 from app.agent.tools.write_tools import (
@@ -21,11 +22,14 @@ from app.agent.tools.write_tools import (
     create_department,
     create_employee,
     delete_employee,
+    delete_policy,
     record_attendance_action,
     reject_leave,
     update_employee,
 )
+from app.models.user import User
 from app.schemas.announcement import AnnouncementCreate
+from app.schemas.common import EmailT
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 from app.schemas.leave import LeaveRequestCreate
@@ -39,6 +43,7 @@ ActionToolName = Literal[
     "create_department",
     "create_announcement",
     "upload_policy",
+    "delete_policy",
     "apply_leave",
     "cancel_leave",
     "check_in",
@@ -50,6 +55,7 @@ UUID_PATTERN = re.compile(
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
 )
 EMAIL_PATTERN = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
+EMAIL_ADAPTER = TypeAdapter(EmailT)
 DATE_PATTERN = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 CONFIRMATION_WORDS = {"yes", "y", "confirm", "confirmed", "proceed"}
 CANCELLATION_WORDS = {"no", "n", "cancel", "stop", "abort"}
@@ -60,6 +66,7 @@ SENSITIVE_ACTIONS = {
     "create_announcement",
     "apply_leave",
     "cancel_leave",
+    "delete_policy",
 }
 
 REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
@@ -77,6 +84,7 @@ REQUIRED_FIELDS: dict[ActionToolName, tuple[str, ...]] = {
     "create_department": ("name",),
     "create_announcement": ("title", "body"),
     "upload_policy": ("title", "category", "policy_file", "document_id"),
+    "delete_policy": ("document_id",),
     "apply_leave": ("leave_type_id", "start_date", "end_date", "reason"),
     "cancel_leave": ("request_id",),
     "check_in": (),
@@ -97,6 +105,7 @@ FIELD_PROMPTS = {
     "body": "What should the announcement say?",
     "category": "What category should this policy use?",
     "policy_file": "Choose the PDF policy file to upload.",
+    "document_id": "Which policy document should be deleted?",
     "leave_type_id": "Which leave type would you like to use?",
     "start_date": "What is the leave start date? Please use YYYY-MM-DD.",
     "end_date": "What is the leave end date? Please use YYYY-MM-DD.",
@@ -110,6 +119,7 @@ def select_action_tool(message: str) -> ActionToolName | None:
         (r"\b(create|add)\b.*\b(employees?|users?)\b", "create_employee"),
         (r"\b(update|change|edit)\b.*\b(employees?|users?)\b", "update_employee"),
         (r"\b(delete|remove)\b.*\b(employees?|users?)\b", "delete_employee"),
+        (r"\b(delete|remove)\b.*\b(policies|policy|documents?)\b", "delete_policy"),
         (r"\bapprove\b.*\bleave\b", "approve_leave"),
         (r"\breject\b.*\bleave\b", "reject_leave"),
         (r"\bapply\b.*\bleave\b", "apply_leave"),
@@ -169,6 +179,8 @@ def _extract_initial_payload(
         payload.setdefault("employee_id", uuid_match.group())
     if uuid_match and tool in {"approve_leave", "reject_leave", "cancel_leave"}:
         payload.setdefault("request_id", uuid_match.group())
+    if uuid_match and tool == "delete_policy":
+        payload.setdefault("document_id", uuid_match.group())
 
     if tool == "create_employee":
         name_match = re.search(
@@ -216,6 +228,30 @@ def _missing_field(tool: ActionToolName, payload: dict[str, object]) -> str | No
         value = payload.get(field)
         if value is None or value == "" or (field == "updates" and not value):
             return field
+    return None
+
+
+async def _validate_employee_email(payload: dict[str, object], db) -> str | None:
+    """Validate and normalize agent-provided email before collecting more slots."""
+    raw_email = payload.get("email")
+    if raw_email in (None, ""):
+        return None
+    try:
+        email = EMAIL_ADAPTER.validate_python(raw_email)
+    except ValidationError:
+        payload.pop("email", None)
+        return (
+            "That email address is invalid. Enter a valid email address, "
+            "for example name@gmail.com."
+        )
+
+    payload["email"] = email
+    existing = await db.scalar(
+        select(User.id).where(func.lower(User.email) == email).limit(1)
+    )
+    if existing is not None:
+        payload.pop("email", None)
+        return "That email is already registered. Enter a different email address."
     return None
 
 
@@ -303,6 +339,7 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         "create_announcement": "publish this announcement",
         "apply_leave": "submit this leave request",
         "cancel_leave": "cancel this leave request",
+        "delete_policy": "permanently delete this policy document",
     }
     return (
         f"Please confirm that you want to {labels[tool]}. "
@@ -322,6 +359,7 @@ def _execution_state(
         "create_department": "Create department",
         "create_announcement": "Create announcement",
         "upload_policy": "Upload policy",
+        "delete_policy": "Delete policy",
         "apply_leave": "Apply for leave",
         "cancel_leave": "Cancel leave request",
         "check_in": "Check in",
@@ -373,6 +411,9 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             state, db, _target_id(state, "document_id")
         )
         message = f"Uploaded and indexed policy {data['title']}."
+    elif tool == "delete_policy":
+        data = await delete_policy(state, db, _target_id(state, "document_id"))
+        message = f"Deleted policy {data['title']} and its indexed content."
     elif tool == "apply_leave":
         data = await apply_leave(
             state, db, LeaveRequestCreate.model_validate(payload)
@@ -480,6 +521,15 @@ async def handle_action(
         tool = selected
         await authorize_write_tool(state, db, tool)
         payload = _extract_initial_payload(tool, state)
+
+    if tool == "create_employee":
+        email_error = await _validate_employee_email(payload, db)
+        if email_error:
+            payload.pop("password", None)
+            result, next_pending = _pending_result(
+                tool, payload, "slots", email_error, "email"
+            )
+            return result, next_pending, sanitized
 
     missing = _missing_field(tool, payload)
     if missing:

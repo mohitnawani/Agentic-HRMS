@@ -17,6 +17,7 @@ ACTION_PATTERNS = (
 )
 DATABASE_PATTERNS = (
     r"\b(how many|remaining)\b.*\b(leave|leaves|days)\b",
+    r"\b(how many|number of|total|count|list|show|available)\b.*\b(policy|policies)\b",
     r"\b(leave balance|leave history|attendance|employee details)\b",
     r"\b(list|show|find|get)\b.*\b(employee|employees|department|attendance)\b",
     r"\b(my profile|my attendance|my leaves)\b",

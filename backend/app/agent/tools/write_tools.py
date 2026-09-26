@@ -19,7 +19,12 @@ from app.schemas.announcement import AnnouncementCreate
 from app.schemas.department import DepartmentCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 from app.schemas.leave import LeaveRequestCreate
-from app.services import attendance_service, employee_service, leave_service
+from app.services import (
+    attendance_service,
+    employee_service,
+    leave_service,
+    policy_service,
+)
 
 
 class WriteToolAccessDenied(PermissionError):
@@ -39,6 +44,7 @@ ACTION_PERMISSIONS = {
     "create_department": "department:write",
     "create_announcement": "announcement:write",
     "upload_policy": "policy:write",
+    "delete_policy": "policy:write",
     "apply_leave": "leave:apply",
     "cancel_leave": "leave:apply",
     "check_in": "attendance:check_in_out",
@@ -267,4 +273,19 @@ async def complete_policy_upload(
         "document_id": str(document.id),
         "title": document.title,
         "category": document.category,
+    }
+
+
+async def delete_policy(
+    state: AgentState, db: AsyncSession, document_id: uuid.UUID
+) -> dict[str, object]:
+    await authorize_write_tool(state, db, "delete_policy")
+    try:
+        document = await policy_service.delete_policy(db, document_id)
+    except HTTPException as exc:
+        raise _translate_service_error(exc) from exc
+    return {
+        "document_id": str(document.id),
+        "title": document.title,
+        "deleted": True,
     }

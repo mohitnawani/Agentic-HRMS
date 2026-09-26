@@ -42,6 +42,8 @@ services:
         sync: false
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
+      - key: SEED_DEMO_DATA
+        value: true
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY

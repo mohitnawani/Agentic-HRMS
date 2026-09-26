@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     frontend_host: str | None = None
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: SecretStr | None = None
+    # Demo seed data for fresh deploys (1 demo admin, 1 HR, 6 employees + sample
+    # leaves/attendance/holidays/announcements). Set false to skip demo seeding.
+    seed_demo_data: bool = True
     cloudinary_cloud_name: str | None = None
     cloudinary_api_key: str | None = None
     cloudinary_api_secret: str | None = None

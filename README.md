@@ -27,6 +27,25 @@ is required.
 4. Apply the Blueprint and wait for the database, API, and frontend to finish.
 5. Open the frontend URL and sign in using the bootstrap administrator account.
 
+### Demo accounts (seeded when `SEED_DEMO_DATA=true`)
+
+Every fresh deploy also seeds a demo team so dashboards, approvals, and chat
+have content immediately. All demo accounts use the password `DemoPass123!`:
+
+| Email | Role | Name |
+| --- | --- | --- |
+| `admin.demo@company.com` | Admin | Vikram Malhotra |
+| `hr.demo@company.com` | HR | Priya Nair |
+| `rahul.verma@company.com` | Employee | Rahul Verma |
+| `amit.patel@company.com` | Employee | Amit Patel |
+| `vaishali.gupta@company.com` | Employee | Vaishali Gupta |
+| `sneha.reddy@company.com` | Employee | Sneha Reddy |
+| `arjun.mehta@company.com` | Employee | Arjun Mehta |
+| `kavya.iyer@company.com` | Employee | Kavya Iyer |
+
+Seeding is idempotent — re-running bootstrap never duplicates rows. To disable
+it, set `SEED_DEMO_DATA=false` on the API service and redeploy the API.
+
 The backend start script applies all Alembic migrations and safely bootstraps
 reference data on every start. It creates the administrator only when the email
 does not already exist; it never resets an existing password.

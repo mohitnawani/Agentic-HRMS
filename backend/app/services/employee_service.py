@@ -77,6 +77,14 @@ async def _ensure_employee_code_free(    db: AsyncSession, employee_code: str | 
 
 
 async def create_employee(db: AsyncSession, data: EmployeeCreate) -> Employee:
+    if data.role == RoleEnum.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Admin is a management-only account, not an employee profile. "
+                "Create admins from User Management."
+            ),
+        )
     existing = await db.execute(select(User).where(func.lower(User.email) == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")

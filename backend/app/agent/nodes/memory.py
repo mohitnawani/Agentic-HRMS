@@ -38,5 +38,12 @@ async def save_memory_node(
         ),
         state.get("memory_assistant_message", state["final_answer"]),
         state.get("pending_action"),
+        state.get("tool_results"),
+        (
+            state["tool_results"][-1].get("data", {}).get("sources", [])
+            if state.get("tool_results")
+            and isinstance(state["tool_results"][-1].get("data"), dict)
+            else []
+        ),
     )
     return {}

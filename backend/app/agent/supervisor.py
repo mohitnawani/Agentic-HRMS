@@ -10,7 +10,7 @@ AGENT_NODE_NAMES = Literal[
 ]
 
 ACTION_PATTERNS = (
-    r"\b(create|add|update|change|edit|delete|remove|upload|publish|post)\b",
+    r"\b(create|add|update|change|edit|correct|fix|delete|remove|upload|publish|post)\b",
     r"\b(approve|reject|cancel)\b.*\b(leave|request)\b",
     r"\bapply\b.*\bleave\b",
     r"\b(check[ -]?in|check[ -]?out)\b",
@@ -19,11 +19,20 @@ DATABASE_PATTERNS = (
     r"\b(show|view|list|get)\b.*\baudit\b",
     r"\b(holiday|holidays|announcement|announcements)\b",
     r"\b(leave history|leave requests|pending leave|leave approved|leave rejected)\b",
+    r"\b(manage|review)\b.*\bleaves?\b",
     r"\b(how many|remaining)\b.*\b(leave|leaves|days)\b",
     r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ie|ies)\b",
     r"\b(leave balance|leave history|attendance|employee details)\b",
     r"\b(list|show|find|get)\b.*\b(employee|employees|department|attendance)\b",
+    r"\b(how many|number of|total|count|list|show|get)\b.*\b(departments?|designations?|users?|employees?)\b",
+    r"\b(show|open|view)\b.*\bdashboard\b",
+    r"\borg(ani[sz]ation)?\b.*\b(stats|statistics|overview|summary)\b",
     r"\b(my profile|my attendance|my leaves)\b",
+    (
+        r"\bmy\b.*\b(profile|details?|information|name|nmae|employee\s*(id|code)|"
+        r"email|emial|phone|phoen|mobile|joining|joined|role|department|designation|"
+        r"birth|dob|gender|address|city|emergency|account\s*status)\b"
+    ),
 )
 RAG_PATTERNS = (
     r"\b(polic(?:y|ie|ies)|handbook|guideline|guidelines|code of conduct)\b",
@@ -46,12 +55,10 @@ def classify_intent(message: str) -> AgentIntent:
 
 def supervisor_node(state: AgentState) -> dict:
     classified = classify_intent(state["message"])
-    # Read-only questions may temporarily interrupt a write flow. The pending
-    # action remains persisted and is resumed after the informational answer.
-    if state.get("pending_action") and classified not in {"database", "rag"}:
-        intent: AgentIntent = "action"
-    else:
-        intent = classified
+    # Once a workflow starts, every message belongs to it until completion or
+    # explicit cancellation. This prevents field values from activating other
+    # nodes and keeps unrelated questions from silently changing the flow.
+    intent: AgentIntent = "action" if state.get("pending_action") else classified
     return {
         "intent": intent,
         "route_trace": ["supervisor"],

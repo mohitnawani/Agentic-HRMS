@@ -8,6 +8,7 @@ import {
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
 import { useDepartments, useCreateDepartment, useDeleteDepartment } from "./useDepartments";
 import type { Department } from "./departmentApi";
 
@@ -16,6 +17,7 @@ export default function DepartmentPage() {
   const createDepartment = useCreateDepartment();
   const deleteDepartment = useDeleteDepartment();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Department | null>(null);
   const { register, handleSubmit, reset } = useForm<{ name: string; description?: string }>();
 
   const onSubmit = async (values: { name: string; description?: string }) => {
@@ -55,12 +57,27 @@ export default function DepartmentPage() {
           {
             header: "Actions",
             render: (d) => (
-              <Button size="sm" variant="destructive" onClick={() => deleteDepartment.mutate(d.id)}>
+              <Button size="sm" variant="destructive" onClick={() => setToDelete(d)}>
                 Delete
               </Button>
             ),
           },
         ]}
+      />
+      <ConfirmActionDialog
+        open={toDelete !== null}
+        title="Delete department?"
+        description={<>This will permanently delete <strong>{toDelete?.name}</strong>. Departments currently in use cannot be deleted.</>}
+        confirmLabel="Delete department"
+        pending={deleteDepartment.isPending}
+        error={deleteDepartment.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteDepartment.isPending) setToDelete(null);
+        }}
+        onConfirm={() => {
+          if (!toDelete) return;
+          deleteDepartment.mutate(toDelete.id, { onSuccess: () => setToDelete(null) });
+        }}
       />
     </div>
   );

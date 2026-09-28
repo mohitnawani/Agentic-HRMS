@@ -10,6 +10,7 @@ import {
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
 import { useDepartments } from "@/features/departments/useDepartments";
 import { useDesignations, useCreateDesignation, useDeleteDesignation } from "./useDesignations";
 import type { Designation } from "./designationApi";
@@ -20,6 +21,7 @@ export default function DesignationPage() {
   const createDesignation = useCreateDesignation();
   const deleteDesignation = useDeleteDesignation();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Designation | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<{ title: string; department_id: string }>();
 
@@ -86,12 +88,27 @@ export default function DesignationPage() {
           {
             header: "Actions",
             render: (d) => (
-              <Button size="sm" variant="destructive" onClick={() => deleteDesignation.mutate(d.id)}>
+              <Button size="sm" variant="destructive" onClick={() => setToDelete(d)}>
                 Delete
               </Button>
             ),
           },
         ]}
+      />
+      <ConfirmActionDialog
+        open={toDelete !== null}
+        title="Delete designation?"
+        description={<>This will permanently delete <strong>{toDelete?.title}</strong>. Assigned designations cannot be deleted.</>}
+        confirmLabel="Delete designation"
+        pending={deleteDesignation.isPending}
+        error={deleteDesignation.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteDesignation.isPending) setToDelete(null);
+        }}
+        onConfirm={() => {
+          if (!toDelete) return;
+          deleteDesignation.mutate(toDelete.id, { onSuccess: () => setToDelete(null) });
+        }}
       />
     </div>
   );

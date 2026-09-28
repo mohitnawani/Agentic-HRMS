@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import AgentState
@@ -127,6 +127,61 @@ async def list_employees(
             "designation": designation,
         }
         for employee, email, department, designation in rows
+    ]
+
+
+async def list_departments(
+    state: AgentState, db: AsyncSession
+) -> list[dict[str, object]]:
+    _, role = _actor(state)
+    _require(role, "department:read")
+    rows = list((await db.scalars(select(Department).order_by(Department.name))).all())
+    return [
+        {
+            "department_id": str(item.id),
+            "name": item.name,
+            "description": item.description,
+        }
+        for item in rows
+    ]
+
+
+async def list_designations(
+    state: AgentState, db: AsyncSession
+) -> list[dict[str, object]]:
+    _, role = _actor(state)
+    _require(role, "designation:read")
+    rows = (
+        await db.execute(
+            select(Designation, Department.name)
+            .join(Department, Department.id == Designation.department_id)
+            .order_by(Department.name, Designation.title)
+        )
+    ).all()
+    return [
+        {
+            "designation_id": str(item.id),
+            "title": item.title,
+            "department": department,
+        }
+        for item, department in rows
+    ]
+
+
+async def list_users(
+    state: AgentState, db: AsyncSession
+) -> list[dict[str, object]]:
+    _, role = _actor(state)
+    _require(role, "user:manage")
+    rows = list((await db.scalars(select(User).order_by(User.email))).all())
+    return [
+        {
+            "user_id": str(item.id),
+            "email": item.email,
+            "role": item.role.value,
+            "is_active": item.is_active,
+        }
+        for item in rows
     ]
 
 
@@ -270,7 +325,14 @@ async def get_employee_details(
         _require(role, "employee:read_self")
 
     statement = (
-        select(Employee, User.email, Department.name, Designation.title)
+        select(
+            Employee,
+            User.email,
+            User.role,
+            User.is_active,
+            Department.name,
+            Designation.title,
+        )
         .join(User, User.id == Employee.user_id)
         .outerjoin(Department, Department.id == Employee.department_id)
         .outerjoin(Designation, Designation.id == Employee.designation_id)
@@ -279,14 +341,23 @@ async def get_employee_details(
     row = (await db.execute(statement)).one_or_none()
     if row is None:
         raise ReadToolNotFound("Employee not found.")
-    employee, email, department, designation = row
+    employee, email, target_role, is_active, department, designation = row
     return {
         "employee_id": str(employee.id),
         "employee_code": employee.employee_code,
         "full_name": f"{employee.first_name} {employee.last_name}",
         "email": email,
+        "role": target_role.value,
+        "account_status": "active" if is_active else "inactive",
         "phone": employee.phone,
         "date_of_joining": employee.date_of_joining.isoformat(),
+        "date_of_birth": (
+            employee.date_of_birth.isoformat() if employee.date_of_birth else None
+        ),
+        "gender": employee.gender,
+        "address": employee.address,
+        "city": employee.city,
+        "emergency_contact": employee.emergency_contact,
         "department": department,
         "designation": designation,
     }
@@ -421,3 +492,51 @@ async def get_announcements(
         }
         for item in rows
     ]
+
+
+async def get_org_stats(state: AgentState, db: AsyncSession) -> dict[str, object]:
+    """Organization-wide headcounts for dashboard-style questions.
+
+    Each metric is gated by its own read permission, so the result only ever
+    contains what the actor's role may see — an employee gets department and
+    holiday counts but never user accounts or pending approvals.
+    """
+    _, role = _actor(state)
+    stats: dict[str, object] = {}
+
+    async def _try(key: str, permission: str, query) -> None:
+        try:
+            _require(role, permission)
+        except ReadToolAccessDenied:
+            return
+        result = await db.execute(query)
+        stats[key] = int(result.scalar_one())
+
+    await _try("total_employees", "employee:read_all", select(func.count()).select_from(Employee))
+    await _try("departments", "department:read", select(func.count()).select_from(Department))
+    await _try("designations", "designation:read", select(func.count()).select_from(Designation))
+    await _try("user_accounts", "user:manage", select(func.count()).select_from(User))
+    await _try(
+        "holidays_this_year",
+        "holiday:read",
+        select(func.count())
+        .select_from(Holiday)
+        .where(
+            Holiday.date >= date(datetime.now(UTC).year, 1, 1),
+            Holiday.date < date(datetime.now(UTC).year + 1, 1, 1),
+        ),
+    )
+    await _try(
+        "active_announcements",
+        "announcement:read",
+        select(func.count()).select_from(Announcement).where(Announcement.is_active.is_(True)),
+    )
+    await _try(
+        "pending_leave_requests",
+        "leave:read_all",
+        select(func.count())
+        .select_from(LeaveRequest)
+        .where(LeaveRequest.status == LeaveRequestStatus.PENDING),
+    )
+    await _try("policy_documents", "policy:read", select(func.count()).select_from(PolicyDocument))
+    return stats

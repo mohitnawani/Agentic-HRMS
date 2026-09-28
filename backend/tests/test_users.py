@@ -1,6 +1,11 @@
 import uuid
 
 import pytest
+from sqlalchemy import select
+
+from app.db.session import async_session
+from app.models.employee import Employee
+from app.models.user import User
 
 
 def _new_user_payload(role="hr"):
@@ -35,6 +40,24 @@ async def test_admin_create_user_and_login(client, admin_token):
         "email": created.json()["email"].upper(), "password": "testpass123", "role": "hr",
     }, headers=h)
     assert dup.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_created_admin_has_no_employee_profile(client, admin_token):
+    payload = _new_user_payload(role="admin")
+    created = await client.post(
+        "/api/v1/users",
+        json=payload,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 200
+
+    async with async_session() as db:
+        user = await db.scalar(select(User).where(User.email == payload["email"]))
+        profile = await db.scalar(
+            select(Employee).where(Employee.user_id == user.id)
+        )
+        assert profile is None
 
 
 @pytest.mark.asyncio

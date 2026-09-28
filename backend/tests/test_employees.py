@@ -24,6 +24,24 @@ async def test_create_and_fetch_employee(client, admin_token):
 
 
 @pytest.mark.asyncio
+async def test_admin_role_cannot_be_created_as_employee(client, admin_token):
+    response = await client.post(
+        "/api/v1/employees",
+        json={
+            "email": f"management_{uuid.uuid4().hex[:6]}@example.com",
+            "password": "testpass123",
+            "first_name": "Management",
+            "last_name": "Admin",
+            "date_of_joining": "2026-09-15",
+            "role": "admin",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 400
+    assert "management-only" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_employee_email_is_normalized_and_unique_case_insensitively(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     local_part = f"emailcase_{uuid.uuid4().hex[:6]}"
@@ -160,9 +178,10 @@ async def test_hr_delete_rules(client, admin_token, employee_token):
     h_emp = {"Authorization": f"Bearer {employee_token}"}
     h_hr, hr_email = await _hr_headers(client, admin_token)
 
-    # HR can delete an employee profile
+    # Employee deletion is an Admin-only management operation.
     victim_id = await _employee_profile_id(client, admin_token)
-    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_hr)).status_code == 204
+    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_hr)).status_code == 403
+    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_admin)).status_code == 204
 
     # HR cannot delete its own (HR-role) profile
     own_profile = await _profile_id_for_email(client, admin_token, hr_email)
@@ -174,16 +193,15 @@ async def test_hr_delete_rules(client, admin_token, employee_token):
     assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_hr)).status_code == 403
     assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_admin)).status_code == 204
 
-    # HR cannot delete an admin-role profile either
+    # Admin accounts are management-only and never appear as employees.
     adm_email = f"admprof_{uuid.uuid4().hex[:6]}@example.com"
     adm = await client.post("/api/v1/users", json={
         "email": adm_email, "password": "testpass123",
         "role": "admin", "first_name": "Adm", "last_name": "Prof",
     }, headers=h_admin)
     assert adm.status_code == 200
-    adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
-    assert (await client.delete(f"/api/v1/employees/{adm_profile}", headers=h_hr)).status_code == 403
-    assert (await client.delete(f"/api/v1/employees/{adm_profile}", headers=h_admin)).status_code == 204
+    listed = (await client.get("/api/v1/employees", headers=h_admin)).json()
+    assert all(employee["email"] != adm_email for employee in listed)
 
     # employee role cannot delete anyone
     victim2 = await _employee_profile_id(client, admin_token, prefix="victim2")
@@ -201,19 +219,14 @@ async def test_hr_edit_rules(client, admin_token):
         f"/api/v1/employees/{victim}", json={"phone": "9999999999"}, headers=h_hr
     )).status_code == 200
 
-    # HR cannot edit an admin-role profile
+    # Admin accounts are managed from Users, not from employee profiles.
     adm_email = f"admupd_{uuid.uuid4().hex[:6]}@example.com"
     await client.post("/api/v1/users", json={
         "email": adm_email, "password": "testpass123",
         "role": "admin", "first_name": "Adm", "last_name": "Upd",
     }, headers=h_admin)
-    adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
-    assert (await client.patch(
-        f"/api/v1/employees/{adm_profile}", json={"phone": "9999999998"}, headers=h_hr
-    )).status_code == 403
-    assert (await client.patch(
-        f"/api/v1/employees/{adm_profile}", json={"phone": "9999999998"}, headers=h_admin
-    )).status_code == 200
+    listed = (await client.get("/api/v1/employees", headers=h_admin)).json()
+    assert all(employee["email"] != adm_email for employee in listed)
 
 
 @pytest.mark.asyncio

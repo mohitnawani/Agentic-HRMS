@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { HatGlasses, Plus, Send, Square } from "lucide-react";
+import { HatGlasses, LogOut, Plus, Send, Square } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppSelector } from "@/store/hooks";
 import ChatMessage from "./ChatMessage";
 import { getAgentConversation, streamAgentChat } from "./agentApi";
-import type { AgentToolResult, ChatMessageModel } from "./agentTypes";
+import type {
+  AgentPendingInteraction,
+  AgentToolResult,
+  ChatMessageModel,
+} from "./agentTypes";
 
 const WELCOME: ChatMessageModel = {
   id: "welcome",
@@ -26,6 +30,34 @@ const ROLE_SUGGESTIONS = {
   admin: ["Show all employees", "Create a department named Product"],
 };
 
+const ASSISTANT_TITLES = {
+  employee: "Employee Assistant",
+  hr: "HR Assistant",
+  admin: "Admin Assistant",
+} as const;
+
+const FLOW_LABELS: Record<string, string> = {
+  apply_leave: "Apply for leave",
+  correct_attendance: "Correct attendance",
+  approve_leave: "Approve leave",
+  create_leave_type: "Create leave type",
+  cancel_leave: "Cancel leave",
+  create_announcement: "Create announcement",
+  create_department: "Create department",
+  delete_department: "Delete department",
+  create_designation: "Create designation",
+  delete_designation: "Delete designation",
+  create_employee: "Create employee",
+  delete_announcement: "Delete announcement",
+  create_holiday: "Create holiday",
+  delete_holiday: "Delete holiday",
+  delete_employee: "Delete employee",
+  delete_policy: "Delete policy",
+  reject_leave: "Reject leave",
+  update_employee: "Update employee",
+  upload_policy: "Upload policy",
+};
+
 export default function ChatPage() {
   const { role, email } = useAppSelector((state) => state.auth);
   const storageKey = `agent-conversation:${email ?? "anonymous"}`;
@@ -37,10 +69,13 @@ export default function ChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isRestoring, setIsRestoring] = useState(Boolean(conversationId));
   const [status, setStatus] = useState("");
+  const [pendingInteraction, setPendingInteraction] =
+    useState<AgentPendingInteraction | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const initialConversationRef = useRef(conversationId);
   const suggestions = role ? ROLE_SUGGESTIONS[role] : [];
+  const assistantTitle = role ? ASSISTANT_TITLES[role] : "HRMS Assistant";
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -59,10 +94,13 @@ export default function ChatPage() {
           id: message.id,
           role: message.role,
           content: message.content,
+          tools: message.tool_results,
+          sources: message.sources,
         }));
         const pending = conversation.pending_interaction;
+        setPendingInteraction(pending);
         const last = restored.at(-1);
-        if (pending && last?.role === "assistant") {
+        if (pending && last?.role === "assistant" && !last.tools?.length) {
           const tool: AgentToolResult = {
             agent: "action",
             status:
@@ -157,8 +195,10 @@ export default function ChatPage() {
             })),
           onSources: (sources) =>
             updateAssistant(assistantId, (item) => ({ ...item, sources })),
-          onDone: (intent) =>
-            updateAssistant(assistantId, (item) => ({ ...item, intent })),
+          onDone: (intent, pending) => {
+            setPendingInteraction(pending);
+            updateAssistant(assistantId, (item) => ({ ...item, intent }));
+          },
           onError: (error) =>
             updateAssistant(assistantId, (item) => ({
               ...item,
@@ -200,6 +240,7 @@ export default function ChatPage() {
     sessionStorage.removeItem(storageKey);
     setConversationId(null);
     setMessages([WELCOME]);
+    setPendingInteraction(null);
     setStatus("");
     setIsRestoring(false);
   };
@@ -207,10 +248,15 @@ export default function ChatPage() {
   return (
     <div className="mx-auto flex h-[calc(100svh-4rem)] max-w-6xl flex-col">
       <PageHeader
-        title="HR Assistant"
+        title={assistantTitle}
         description="Ask about policies, HR data, or actions available to your role"
         actions={
-          <Button variant="outline" onClick={newConversation} disabled={isStreaming}>
+          <Button
+            variant="outline"
+            onClick={newConversation}
+            disabled={isStreaming || Boolean(pendingInteraction)}
+            title={pendingInteraction ? "Exit the current flow first" : undefined}
+          >
             <Plus className="size-4" /> New conversation
           </Button>
         }
@@ -222,7 +268,7 @@ export default function ChatPage() {
             <HatGlasses className="size-5" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-primary">Agentic HRMS Assistant</p>
+            <p className="text-sm font-semibold text-primary">{assistantTitle}</p>
             <p className="text-xs text-muted-foreground">
               {isRestoring
                 ? "Restoring your conversation..."
@@ -232,6 +278,28 @@ export default function ChatPage() {
             </p>
           </div>
         </div>
+
+        {pendingInteraction && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-warning/30 bg-warning/10 px-4 py-3 sm:px-6">
+            <div>
+              <p className="text-xs font-semibold text-primary">
+                Current flow: {FLOW_LABELS[pendingInteraction.tool] ?? pendingInteraction.tool.replaceAll("_", " ")}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Complete the current step, or exit before starting another task.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isStreaming || isRestoring}
+              onClick={() => void sendMessage("exit", undefined, "Exit current flow")}
+            >
+              <LogOut className="size-3.5" /> Exit flow
+            </Button>
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6" aria-live="polite">
           <div className="space-y-5">
@@ -270,8 +338,12 @@ export default function ChatPage() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Message the HR assistant..."
-              aria-label="Message the HR assistant"
+              placeholder={
+                pendingInteraction
+                  ? "Continue this flow, or type exit to cancel..."
+                  : `Message the ${assistantTitle.toLowerCase()}...`
+              }
+              aria-label={`Message the ${assistantTitle.toLowerCase()}`}
               disabled={isStreaming || isRestoring}
               className="min-h-11 max-h-32 resize-none rounded-xl"
               rows={1}

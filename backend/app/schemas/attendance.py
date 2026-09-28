@@ -27,6 +27,12 @@ class AttendanceCorrection(BaseModel):
     correction_reason: Annotated[StrippedStr, Field(min_length=1, max_length=500)]
 
 
+class AttendanceDateCorrection(AttendanceCorrection):
+    """Correction payload used when a day may not have a stored row yet."""
+
+    status: AttendanceStatus
+
+
 class AttendanceSummary(BaseModel):
     total_days: int
     present: int

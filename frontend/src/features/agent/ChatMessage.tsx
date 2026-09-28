@@ -30,6 +30,15 @@ export default function ChatMessage({
       && Array.isArray(data.summaries)
       && data.summaries.length > 0;
   }) ?? false;
+  const hasEmployeeSelector = message.tools?.some((tool) => {
+    const data = tool.data;
+    return tool.agent === "action"
+      && tool.status === "needs_input"
+      && !Array.isArray(data)
+      && data != null
+      && data.missing_field === "employee_id";
+  }) ?? false;
+  const showMessageBubble = !hasStructuredPolicySummary && !hasEmployeeSelector;
 
   return (
     <article className={cn("flex gap-3", !assistant && "flex-row-reverse")}>
@@ -42,7 +51,7 @@ export default function ChatMessage({
         {assistant ? <HatGlasses className="size-4" /> : <UserRound className="size-4" />}
       </span>
       <div className={cn("max-w-[88%] sm:max-w-[78%]", !assistant && "text-right")}>
-        {!hasStructuredPolicySummary && (
+        {showMessageBubble && (
           <div
             className={cn(
               "inline-block whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-6",

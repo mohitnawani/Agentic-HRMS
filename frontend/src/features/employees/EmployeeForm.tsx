@@ -41,7 +41,7 @@ const schema = z.object({
   ifsc_code: z.string().trim().max(20, "Too long").optional(),
   id_proof_type: z.string().trim().max(50, "Too long").optional(),
   id_proof_number: z.string().trim().max(100, "Too long").optional(),
-  role: z.enum(["admin", "hr", "employee"]).optional(),
+  role: z.enum(["hr", "employee"]).optional(),
   photo: z.any().optional(),
 });
 
@@ -198,7 +198,7 @@ export default function EmployeeForm() {
                       <Select onValueChange={field.onChange} value={field.value ?? "employee"}>
                         <SelectTrigger><SelectValue placeholder="Employee" /></SelectTrigger>
                         <SelectContent>
-                          {(role === "admin" ? ["admin", "hr", "employee"] : ["hr", "employee"]).map((r) => (
+                          {["hr", "employee"].map((r) => (
                             <SelectItem key={r} value={r}>{r === "hr" ? "HR" : r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
                           ))}
                         </SelectContent>

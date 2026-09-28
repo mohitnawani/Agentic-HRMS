@@ -97,6 +97,8 @@ async def save_conversation_exchange(
     user_message: str,
     assistant_message: str,
     pending_action: dict | None,
+    tool_results: list[dict] | None = None,
+    sources: list[dict] | None = None,
 ) -> None:
     statement = (
         select(AgentConversation)
@@ -124,6 +126,8 @@ async def save_conversation_exchange(
                 conversation_id=conversation.id,
                 role="assistant",
                 content=assistant_message,
+                tool_results=jsonable_encoder(tool_results) if tool_results else None,
+                sources=jsonable_encoder(sources) if sources else None,
             ),
         ]
     )

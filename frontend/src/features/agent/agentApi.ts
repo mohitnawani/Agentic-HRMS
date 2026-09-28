@@ -3,6 +3,7 @@ import { API_BASE_URL, apiClient } from "@/lib/api-client";
 import type {
   AgentConversation,
   AgentIntent,
+  AgentPendingInteraction,
   AgentSource,
   AgentToolResult,
   StreamChatRequest,
@@ -19,7 +20,10 @@ interface StreamHandlers {
   onToken: (text: string) => void;
   onTool: (result: AgentToolResult) => void;
   onSources: (sources: AgentSource[]) => void;
-  onDone: (intent: AgentIntent) => void;
+  onDone: (
+    intent: AgentIntent,
+    pendingInteraction: AgentPendingInteraction | null,
+  ) => void;
   onError: (message: string) => void;
 }
 
@@ -68,7 +72,10 @@ function dispatchEvent(parsed: ParsedEvent, handlers: StreamHandlers) {
       break;
     case "done":
       if (typeof data.intent === "string") {
-        handlers.onDone(data.intent as AgentIntent);
+        const pending = isRecord(data.pending_interaction)
+          ? (data.pending_interaction as unknown as AgentPendingInteraction)
+          : null;
+        handlers.onDone(data.intent as AgentIntent, pending);
       }
       break;
     case "error":

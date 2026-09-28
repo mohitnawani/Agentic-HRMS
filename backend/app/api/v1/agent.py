@@ -74,6 +74,11 @@ async def get_agent_conversation(
                 role=message.role,
                 content=message.content,
                 created_at=message.created_at,
+                tool_results=message.tool_results or [],
+                sources=[
+                    AgentSource.model_validate(source)
+                    for source in (message.sources or [])
+                ],
             )
             for message in messages
         ],
@@ -174,11 +179,20 @@ async def stream_chat_with_agent(
             sources = _result_sources(result)
             if sources:
                 yield _sse("sources", {"items": sources})
+            raw_pending = result.get("pending_action")
+            pending_interaction = None
+            if isinstance(raw_pending, dict):
+                pending_interaction = {
+                    "tool": raw_pending.get("tool", "unknown"),
+                    "stage": raw_pending.get("stage", "slots"),
+                    "missing_field": raw_pending.get("missing_field"),
+                }
             yield _sse(
                 "done",
                 {
                     "intent": result["intent"],
                     "conversation_id": conversation.id,
+                    "pending_interaction": pending_interaction,
                 },
             )
         except asyncio.CancelledError:

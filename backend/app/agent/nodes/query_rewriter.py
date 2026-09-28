@@ -14,25 +14,42 @@ CONFIRMATION_WORDS = {"yes", "y", "confirm", "confirmed", "proceed"}
 CANCELLATION_WORDS = {"no", "n", "cancel", "stop", "abort"}
 
 COMMON_CORRECTIONS = {
+    "annocement": "announcement",
+    "annocenmte": "announcement",
+    "annocuemtn": "announcement",
+    "annocuemtns": "announcements",
+    "anoucmetn": "announcement",
+    "anoucmetns": "announcements",
     "annoucement": "announcement",
     "annoucements": "announcements",
+    "anouncement": "announcement",
     "aply": "apply",
     "aplly": "apply",
     "aprove": "approve",
+    "aproove": "approve",
     "attendence": "attendance",
+    "attence": "attendance",
+    "attandance": "attendance",
     "balnce": "balance",
     "chek": "check",
     "delte": "delete",
     "detials": "details",
+    "departmant": "department",
+    "desgination": "designation",
     "employe": "employee",
     "employess": "employees",
     "emploues": "employees",
     "leav": "leave",
+    "mange": "manage",
+    "mangeleave": "manage leave",
     "polcy": "policy",
+    "policky": "policy",
     "policie": "policies",
     "polcies": "policies",
     "polices": "policies",
     "rejct": "reject",
+    "rejdct": "reject",
+    "reomve": "remove",
     "shwo": "show",
     "sumarize": "summarize",
     "summry": "summary",
@@ -43,6 +60,17 @@ COMMON_CORRECTIONS = {
     "wht": "what",
     "whcih": "which",
 }
+
+PHRASE_CORRECTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\bi\s+went\s+to\s+(?=(?:add|create|delete|remove|update|edit|"
+            r"apply|approve|reject|upload|show|list)\b)",
+            re.IGNORECASE,
+        ),
+        "I want to ",
+    ),
+)
 
 PROTECTED_PATTERN = re.compile(
     r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|"
@@ -74,12 +102,15 @@ name exactly. Return only the rewritten question in the structured field.""",
 
 
 def correct_common_misspellings(message: str) -> str:
+    corrected = message
+    for pattern, replacement in PHRASE_CORRECTIONS:
+        corrected = pattern.sub(replacement, corrected)
     pattern = re.compile(
         r"\b(" + "|".join(map(re.escape, COMMON_CORRECTIONS)) + r")\b",
         re.IGNORECASE,
     )
     return pattern.sub(
-        lambda match: COMMON_CORRECTIONS[match.group(0).lower()], message
+        lambda match: COMMON_CORRECTIONS[match.group(0).lower()], corrected
     )
 
 
@@ -137,8 +168,9 @@ async def query_rewriter_node(state: AgentState) -> dict:
             "route_trace": ["query_rewriter"],
         }
 
-    # Clear, correctly routed questions do not need another model call.
-    if corrected == normalized:
+    # Clear read requests already have a stable route and need no model call.
+    # Gemini is reserved for unclear/general messages or corrected questions.
+    if corrected == normalized and corrected_intent in {"database", "rag"}:
         rewritten = corrected
     else:
         try:

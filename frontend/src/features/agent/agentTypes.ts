@@ -46,6 +46,8 @@ export interface AgentConversationMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  tool_results: AgentToolResult[];
+  sources: AgentSource[];
 }
 
 export interface AgentPendingInteraction {

@@ -18,9 +18,13 @@ from app.agent.tools.read_tools import (
     get_holidays,
     get_leave_balance,
     get_leave_history,
+    get_org_stats,
     get_policy_catalog,
+    list_departments,
+    list_designations,
     list_employees,
     list_pending_leave_requests,
+    list_users,
 )
 
 DatabaseToolName = Literal[
@@ -34,11 +38,27 @@ DatabaseToolName = Literal[
     "list_pending_leave_requests",
     "get_holidays",
     "get_announcements",
+    "get_org_stats",
+    "list_departments",
+    "list_designations",
+    "list_users",
 ]
+
+PROFILE_QUERY_PATTERN = re.compile(
+    r"\bmy\b.*\b(?:profile|details?|information|name|nmae|employee\s*(?:id|code)|"
+    r"email|emial|phone|phoen|mobile|joining|joined|role|department|designation|"
+    r"birth|dob|gender|address|city|emergency|account\s*status)\b"
+)
+
+
+def _is_profile_query(message: str) -> bool:
+    return bool(PROFILE_QUERY_PATTERN.search(" ".join(message.lower().split())))
 
 
 def select_database_tool(message: str) -> DatabaseToolName | None:
     normalized = " ".join(message.lower().split())
+    if _is_profile_query(normalized):
+        return "get_employee_details"
     if "audit" in normalized and any(
         word in normalized for word in ("show", "view", "list", "log", "logs")
     ):
@@ -48,6 +68,8 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
     if "holiday" in normalized:
         return "get_holidays"
     if "leave" in normalized and "pending" in normalized:
+        return "list_pending_leave_requests"
+    if "leave" in normalized and any(word in normalized for word in ("manage", "review")):
         return "list_pending_leave_requests"
     if "leave" in normalized and any(
         word in normalized for word in ("history", "requests", "approved", "rejected")
@@ -64,11 +86,83 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
         word in normalized for word in ("balance", "remaining", "how many", "left")
     ):
         return "get_leave_balance"
-    if re.search(r"\b(list|show|find|get)\b.*\bemployees\b", normalized):
+    if "dashboard" in normalized or (
+        "organization" in normalized
+        and any(word in normalized for word in ("stat", "overview", "summary"))
+    ):
+        return "get_org_stats"
+    entities = ("department", "designation", "employee", "user", "account")
+    if sum(1 for entity in entities if entity in normalized) >= 2:
+        return "get_org_stats"
+    if re.search(r"\b(list|show|find|get|how many|number of|total|count)\b.*\bemployees\b", normalized):
         return "list_employees"
+    if "department" in normalized:
+        return "list_departments"
+    if "designation" in normalized:
+        return "list_designations"
+    if re.search(r"\b(users?|accounts?)\b", normalized):
+        return "list_users"
     if any(term in normalized for term in ("employee details", "my profile")):
         return "get_employee_details"
     return None
+
+
+def _profile_response(
+    message: str, profile: dict[str, object]
+) -> tuple[str, dict[str, object]]:
+    """Return only the requested profile fields, or the complete safe profile."""
+    normalized = " ".join(message.lower().split())
+    labels = {
+        "employee_id": "Employee ID",
+        "employee_code": "Employee code",
+        "full_name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "account_status": "Account status",
+        "phone": "Phone",
+        "date_of_joining": "Joining date",
+        "date_of_birth": "Date of birth",
+        "gender": "Gender",
+        "address": "Address",
+        "city": "City",
+        "emergency_contact": "Emergency contact",
+        "department": "Department",
+        "designation": "Designation",
+    }
+    terms = {
+        "employee_id": ("employee id", "my id"),
+        "employee_code": ("employee code",),
+        "full_name": ("name", "nmae"),
+        "email": ("email", "emial"),
+        "role": ("role",),
+        "account_status": ("account status", "active", "inactive"),
+        "phone": ("phone", "phoen", "mobile"),
+        "date_of_joining": ("joining", "joined"),
+        "date_of_birth": ("date of birth", "birth date", "dob"),
+        "gender": ("gender",),
+        "address": ("address",),
+        "city": ("city",),
+        "emergency_contact": ("emergency",),
+        "department": ("department",),
+        "designation": ("designation", "job title"),
+    }
+    show_all = any(
+        term in normalized
+        for term in ("profile", "details", "information", "all")
+    )
+    selected_keys = list(labels) if show_all else [
+        key
+        for key, keywords in terms.items()
+        if any(keyword in normalized for keyword in keywords)
+    ]
+    if not selected_keys:
+        selected_keys = ["full_name", "employee_code", "department", "designation"]
+    selected = {key: profile.get(key) for key in selected_keys}
+    parts = [
+        f"{labels[key]}: {selected[key] if selected[key] not in (None, '') else 'not provided'}"
+        for key in selected_keys
+    ]
+    return "; ".join(parts) + ".", selected
 
 
 def _employee_id_from_message(message: str) -> uuid.UUID | None:
@@ -157,6 +251,36 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             if data
             else "No employees were found."
         )
+    elif tool == "list_departments":
+        records = await list_departments(state, db)
+        data = {"departments": records}
+        message = f"There are {len(records)} department(s)."
+    elif tool == "list_designations":
+        records = await list_designations(state, db)
+        data = {"designations": records}
+        message = f"There are {len(records)} designation(s)."
+    elif tool == "list_users":
+        records = await list_users(state, db)
+        data = {"users": records}
+        message = f"There are {len(records)} user account(s)."
+    elif tool == "get_org_stats":
+        data = await get_org_stats(state, db)
+        labels = {
+            "total_employees": "employees",
+            "departments": "departments",
+            "designations": "designations",
+            "user_accounts": "user accounts",
+            "holidays_this_year": "holidays this year",
+            "active_announcements": "active announcements",
+            "pending_leave_requests": "pending leave requests",
+            "policy_documents": "policy documents",
+        }
+        parts = [f"{value} {labels[key]}" for key, value in data.items() if key in labels]
+        message = (
+            f"Organization overview: {', '.join(parts)}."
+            if parts
+            else "No organization metrics are visible to your role."
+        )
     elif tool == "get_policy_catalog":
         data = await get_policy_catalog(state, db)
         policies = data["policies"]
@@ -176,11 +300,7 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
         data = await get_employee_details(
             state, db, employee_id=_employee_id_from_message(state["message"])
         )
-        message = (
-            f"{data['full_name']} ({data['employee_code'] or 'no employee code'}), "
-            f"department: {data['department'] or 'not assigned'}, "
-            f"designation: {data['designation'] or 'not assigned'}."
-        )
+        message, data = _profile_response(state["message"], data)
     return {
         "agent": "database",
         "status": "success",

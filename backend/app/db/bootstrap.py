@@ -155,7 +155,6 @@ DEMO_PASSWORD = "DemoPass123!"
 # employee code, date of joining. HR uses the HR role in Human Resources;
 # everyone else uses the Employee role in their own department.
 DEMO_TEAM: tuple[tuple[str, RoleEnum, str, str, str, str, str, date], ...] = (
-    ("admin.demo@company.com", RoleEnum.ADMIN, "Vikram", "Malhotra", "Administration", "Admin Manager", "EMP-1001", date(2022, 4, 1)),
     ("hr.demo@company.com", RoleEnum.HR, "Priya", "Nair", "Human Resources", "HR Manager", "EMP-1002", date(2023, 1, 15)),
     ("rahul.verma@company.com", RoleEnum.EMPLOYEE, "Rahul", "Verma", "Engineering / IT", "Backend Developer", "EMP-1003", date(2023, 6, 1)),
     ("amit.patel@company.com", RoleEnum.EMPLOYEE, "Amit", "Patel", "Engineering / IT", "Frontend Developer", "EMP-1004", date(2023, 9, 12)),
@@ -249,6 +248,9 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
     """Seed a small demo team plus sample HR records. Safe to re-run."""
     demo_hash = hash_password(DEMO_PASSWORD)
     employees_by_email: dict[str, Employee] = {}
+    admin_user = await _get_or_create_user(
+        session, "admin.demo@company.com", RoleEnum.ADMIN, demo_hash
+    )
 
     for email, role, first, last, dept_name, desig_title, code, doj in DEMO_TEAM:
         department = departments[dept_name]
@@ -273,10 +275,6 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
 
     casual = next(lt for lt in leave_types if lt.name == "Casual Leave")
     sick = next(lt for lt in leave_types if lt.name == "Sick Leave")
-    admin_user = await session.scalar(
-        select(User).where(func.lower(User.email) == "admin.demo@company.com")
-    )
-
     # One pending + one approved leave request so both queues have content.
     rahul = employees_by_email["rahul.verma@company.com"]
     pending = await session.scalar(
@@ -392,8 +390,6 @@ async def bootstrap() -> None:
             await _get_or_create_leave_type(session, "Casual Leave", 12),
             await _get_or_create_leave_type(session, "Sick Leave", 6),
         ]
-        admin_manager = designations["Admin Manager"]
-
         if credentials is not None:
             email, password = credentials
             user = await session.scalar(
@@ -412,31 +408,6 @@ async def bootstrap() -> None:
                 )
                 session.add(user)
                 await session.flush()
-
-            employee = await session.scalar(
-                select(Employee).where(Employee.user_id == user.id)
-            )
-            if employee is None:
-                employee = Employee(
-                    user_id=user.id,
-                    first_name="System",
-                    last_name="Administrator",
-                    date_of_joining=today,
-                    department_id=departments["Administration"].id,
-                    designation_id=admin_manager.id,
-                )
-                session.add(employee)
-                await session.flush()
-                for leave_type in leave_types:
-                    session.add(
-                        LeaveBalance(
-                            employee_id=employee.id,
-                            leave_type_id=leave_type.id,
-                            year=today.year,
-                            total_days=leave_type.default_annual_days,
-                            used_days=0,
-                        )
-                    )
 
         await session.commit()
         if settings.seed_demo_data:

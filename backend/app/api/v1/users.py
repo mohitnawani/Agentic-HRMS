@@ -45,7 +45,9 @@ async def create_user(
     db.add(user)
     await db.flush()
     profile = None
-    if data.first_name and data.last_name:
+    # Admins are management-only identities. HR and Employee accounts may
+    # have an employee profile for attendance, leave, and personal details.
+    if data.role != RoleEnum.ADMIN and data.first_name and data.last_name:
         profile = Employee(
             user_id=user.id,
             first_name=data.first_name,

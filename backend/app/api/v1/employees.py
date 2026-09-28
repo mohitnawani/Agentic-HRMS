@@ -9,7 +9,6 @@ from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.department import Department
 from app.models.designation import Designation
-from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeUpdate
 from app.services import employee_service
@@ -87,8 +86,6 @@ async def create_employee(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if data.role == RoleEnum.ADMIN and current_user.role != RoleEnum.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create admin accounts")
     employee = await employee_service.create_employee(db, data)
     user_result = await db.execute(select(User).where(User.id == employee.user_id))
     return await _to_read_schema(employee, user_result.scalar_one(), db)

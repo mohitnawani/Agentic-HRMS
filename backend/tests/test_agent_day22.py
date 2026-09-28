@@ -101,6 +101,34 @@ async def test_slot_follow_up_exposes_structured_ui_metadata(client, admin_token
         "stage": "slots",
         "missing_field": "email",
     }
+    assistant_message = restored.json()["messages"][-1]
+    assert assistant_message["tool_results"] == [tool]
+    await delete_conversation(conversation_id)
+
+
+@pytest.mark.asyncio
+async def test_structured_employee_results_survive_conversation_restore(
+    client, admin_token
+):
+    response = await client.post(
+        "/api/v1/agent/chat/stream",
+        json={"message": "List all employees"},
+        headers=auth(admin_token),
+    )
+    assert response.status_code == 200, response.text
+    events = parse_sse(response.text)
+    conversation_id = event_data(events, "meta")["conversation_id"]
+    live_tool = event_data(events, "tool")
+    assert live_tool["tool"] == "list_employees"
+    assert isinstance(live_tool["data"], list)
+
+    restored = await client.get(
+        f"/api/v1/agent/conversations/{conversation_id}",
+        headers=auth(admin_token),
+    )
+    assert restored.status_code == 200, restored.text
+    saved_tools = restored.json()["messages"][-1]["tool_results"]
+    assert saved_tools == [live_tool]
     await delete_conversation(conversation_id)
 
 
@@ -206,3 +234,32 @@ async def test_confirmation_buttons_can_cancel_without_database_write(
         await db.execute(delete(Employee).where(Employee.id == target_id))
         await db.execute(delete(User).where(User.id == target_user_id))
         await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_announcement_title_holiday_stays_in_pending_action(client, admin_token):
+    started = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Create announcement"},
+        headers=auth(admin_token),
+    )
+    assert started.status_code == 200
+    conversation_id = started.json()["conversation_id"]
+    assert "title" in started.json()["answer"].lower()
+
+    titled = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "Holiday", "conversation_id": conversation_id},
+        headers=auth(admin_token),
+    )
+    assert titled.status_code == 200
+    assert titled.json()["intent"] == "action"
+    assert "announcement" in titled.json()["answer"].lower()
+    assert "say" in titled.json()["answer"].lower()
+
+    await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "cancel", "conversation_id": conversation_id},
+        headers=auth(admin_token),
+    )
+    await delete_conversation(conversation_id)

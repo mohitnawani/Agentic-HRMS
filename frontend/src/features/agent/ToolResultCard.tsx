@@ -21,10 +21,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmployee, useEmployees } from "@/features/employees/useEmployees";
+import { useAnnouncements } from "@/features/announcements/useAnnouncements";
 import { usePolicies, useUploadPolicy } from "@/features/policies/usePolicies";
 import {
-  useLeaveTypes,
-  useMyBalances,
   useMyRequests,
   usePendingRequests,
 } from "@/features/leave/useLeave";
@@ -43,6 +42,9 @@ const TOOL_LABELS: Record<string, string> = {
   list_pending_leave_requests: "Pending leave requests",
   get_holidays: "Holidays",
   get_announcements: "Announcements",
+  list_departments: "Departments",
+  list_designations: "Designations",
+  list_users: "User accounts",
   policy_rag: "Policy search",
   policy_summary: "Policy summary",
   create_employee: "Create employee",
@@ -50,11 +52,20 @@ const TOOL_LABELS: Record<string, string> = {
   delete_employee: "Delete employee",
   approve_leave: "Approve leave",
   reject_leave: "Reject leave",
+  create_leave_type: "Create leave type",
   create_department: "Create department",
+  delete_department: "Delete department",
+  create_designation: "Create designation",
+  delete_designation: "Delete designation",
   create_announcement: "Create announcement",
+  update_announcement: "Update announcement",
+  delete_announcement: "Delete announcement",
+  create_holiday: "Create holiday",
+  delete_holiday: "Delete holiday",
   upload_policy: "Upload policy",
   delete_policy: "Delete policy",
   apply_leave: "Apply for leave",
+  correct_attendance: "Correct attendance",
   cancel_leave: "Cancel leave",
   check_in: "Check in",
   check_out: "Check out",
@@ -65,6 +76,10 @@ const FIELD_LABELS: Record<string, string> = {
   last_name: "Last name",
   email: "Email address",
   date_of_joining: "Joining date",
+  date_of_birth: "Date of birth",
+  start_date: "Start date",
+  end_date: "End date",
+  date: "Date",
   password: "Temporary password",
   employee_id: "Employee ID",
   request_id: "Leave request ID",
@@ -73,7 +88,19 @@ const FIELD_LABELS: Record<string, string> = {
   body: "Announcement message",
   category: "Policy category",
   policy_file: "Policy PDF",
+  status: "Attendance status",
+  correction_reason: "Correction reason",
+  leave_type_name: "Leave type name",
+  annual_days: "Annual days",
 };
+
+const DATE_FIELDS = new Set([
+  "date",
+  "date_of_birth",
+  "date_of_joining",
+  "end_date",
+  "start_date",
+]);
 
 const UPDATE_FIELDS = [
   { name: "first_name", label: "First name" },
@@ -338,135 +365,81 @@ function EmployeeUpdateForm({
   );
 }
 
-function LeaveApplicationForm({
+function AnnouncementUpdateForm({
+  announcementId,
   disabled,
   onRespond,
 }: {
+  announcementId: string;
   disabled: boolean;
   onRespond: Respond;
 }) {
-  const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [reason, setReason] = useState("");
-  const [dateError, setDateError] = useState("");
-  const { data: leaveTypes, isLoading: typesLoading } = useLeaveTypes();
-  const { data: balances, isLoading: balancesLoading } = useMyBalances();
-  const selectedType = leaveTypes?.find((type) => type.id === leaveTypeId);
-  const selectedBalance = balances?.find((balance) => balance.leave_type_id === leaveTypeId);
+  const [title, setTitle] = useState<string | null>(null);
+  const [body, setBody] = useState<string | null>(null);
+  const [isActive, setIsActive] = useState<boolean | null>(null);
+  const { data: announcements, isLoading, isError } = useAnnouncements();
+  const current = announcements?.find((item) => item.id === announcementId);
 
-  const submitLeave = (event: FormEvent) => {
+  const updates: Record<string, string | boolean> = {};
+  if (title !== null && title.trim() !== (current?.title ?? "")) updates.title = title.trim();
+  if (body !== null && body.trim() !== (current?.body ?? "")) updates.body = body.trim();
+  if (isActive !== null && isActive !== current?.is_active) updates.is_active = isActive;
+
+  const submitUpdates = (event: FormEvent) => {
     event.preventDefault();
-    if (!leaveTypeId || !startDate || !endDate || !reason.trim()) return;
-    if (endDate < startDate) {
-      setDateError("End date cannot be before the start date.");
-      return;
-    }
-    const balanceYear = selectedBalance?.year;
-    if (
-      balanceYear &&
-      (Number(startDate.slice(0, 4)) !== balanceYear || Number(endDate.slice(0, 4)) !== balanceYear)
-    ) {
-      setDateError(`Your displayed leave balance is for ${balanceYear}. Choose dates in ${balanceYear}.`);
-      return;
-    }
-    setDateError("");
+    const fields = Object.keys(updates);
+    if (!fields.length) return;
     onRespond(
-      "Submit leave application",
-      {
-        leave_type_id: leaveTypeId,
-        start_date: startDate,
-        end_date: endDate,
-        reason: reason.trim(),
-      },
-      `Apply for ${selectedType?.name ?? "leave"}: ${startDate} to ${endDate}`,
+      "Update selected announcement",
+      { updates },
+      `Update announcement fields: ${fields.join(", ")}`,
     );
   };
 
-  const loading = typesLoading || balancesLoading;
   return (
-    <form onSubmit={submitLeave} className="mt-3 space-y-3 border-t border-warning/20 pt-3">
+    <form onSubmit={submitUpdates} className="mt-3 space-y-3 border-t border-warning/20 pt-3">
       <div>
-        <p className="text-xs font-medium text-primary">New leave request</p>
+        <p className="text-xs font-medium text-primary">Announcement changes</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Complete the request below. You can review it before confirmation.
+          Existing values are prefilled. Change any fields, then save them together.
         </p>
       </div>
-      <label className="block">
-        <span className="mb-1 block text-xs text-muted-foreground">Leave type</span>
-        <Select value={leaveTypeId} onValueChange={setLeaveTypeId} disabled={disabled || loading}>
-          <SelectTrigger>
-            <SelectValue placeholder={loading ? "Loading leave balances..." : "Select leave type"} />
-          </SelectTrigger>
-          <SelectContent>
-            {leaveTypes?.map((type) => {
-              const balance = balances?.find((item) => item.leave_type_id === type.id);
-              return (
-                <SelectItem key={type.id} value={type.id}>
-                  {type.name} · {balance?.remaining_days ?? 0} days available
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </label>
-      {selectedBalance && (
-        <p className="rounded-md bg-secondary/70 px-3 py-2 text-xs text-muted-foreground">
-          {selectedBalance.remaining_days} of {selectedBalance.total_days} days remaining
-        </p>
-      )}
-      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
-        <label>
-          <span className="mb-1 block text-xs text-muted-foreground">Start date</span>
+      {isLoading && <p className="text-xs text-muted-foreground">Loading announcement details...</p>}
+      {isError && <p className="text-xs text-destructive">Could not load announcement details.</p>}
+      <div className="space-y-2">
+        <label className="block">
+          <span className="mb-1 block text-xs text-muted-foreground">Title</span>
           <Input
-            type="date"
-            value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
-            disabled={disabled}
-            required
+            value={title ?? current?.title ?? ""}
+            onChange={(event) => setTitle(event.target.value)}
+            disabled={disabled || isLoading || isError}
           />
         </label>
-        <label>
-          <span className="mb-1 block text-xs text-muted-foreground">End date</span>
-          <Input
-            type="date"
-            value={endDate}
-            min={startDate || undefined}
-            onChange={(event) => setEndDate(event.target.value)}
-            disabled={disabled}
-            required
+        <label className="block">
+          <span className="mb-1 block text-xs text-muted-foreground">Message</span>
+          <Textarea
+            value={body ?? current?.body ?? ""}
+            onChange={(event) => setBody(event.target.value)}
+            disabled={disabled || isLoading || isError}
           />
         </label>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={isActive ?? current?.is_active ?? true}
+            onChange={(event) => setIsActive(event.target.checked)}
+            disabled={disabled || isLoading || isError}
+          />
+          Visible to all users
+        </label>
       </div>
-      <label className="block">
-        <span className="mb-1 block text-xs text-muted-foreground">Reason</span>
-        <Textarea
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Why do you need leave?"
-          disabled={disabled}
-          required
-        />
-      </label>
-      {dateError && <p className="text-xs text-destructive">{dateError}</p>}
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          type="submit"
-          disabled={disabled || loading || !leaveTypeId || !startDate || !endDate || !reason.trim()}
-        >
-          Review request
-        </Button>
-        <Button
-          size="sm"
-          type="button"
-          variant="outline"
-          onClick={() => onRespond("cancel")}
-          disabled={disabled}
-        >
-          Cancel
-        </Button>
-      </div>
+      <Button
+        size="sm"
+        type="submit"
+        disabled={disabled || isLoading || isError || !Object.keys(updates).length}
+      >
+        Save changes
+      </Button>
     </form>
   );
 }
@@ -759,6 +732,10 @@ export default function ToolResultCard({
   const announcements = isRecord(data) && Array.isArray(data.announcements)
     ? data.announcements
     : [];
+  const departments = isRecord(data) && Array.isArray(data.departments) ? data.departments : [];
+  const designations = isRecord(data) && Array.isArray(data.designations) ? data.designations : [];
+  const users = isRecord(data) && Array.isArray(data.users) ? data.users : [];
+  const managementRecords = [...departments, ...designations, ...users];
   const details = isRecord(data)
     ? Object.entries(data).filter(
         ([key, item]) =>
@@ -772,6 +749,12 @@ export default function ToolResultCard({
       : null;
   const pendingParameters =
     isRecord(data) && isRecord(data.parameters) ? data.parameters : {};
+  const minimumDate =
+    isRecord(data) && typeof data.min_date === "string" ? data.min_date : undefined;
+  const suggestions =
+    isRecord(data) && Array.isArray(data.suggestions)
+      ? data.suggestions.filter(isRecord)
+      : [];
   const Icon = denied
     ? ShieldAlert
     : failed
@@ -797,7 +780,7 @@ export default function ToolResultCard({
   const inputType =
     missingField === "email"
       ? "email"
-      : missingField === "date_of_joining"
+      : missingField && DATE_FIELDS.has(missingField)
         ? "date"
         : missingField === "password"
           ? "password"
@@ -869,9 +852,10 @@ export default function ToolResultCard({
       {interactive &&
         result.status === "needs_input" &&
         missingField === "updates" &&
+        result.tool === "update_announcement" &&
         onRespond && (
-          <EmployeeUpdateForm
-            employeeId={String(pendingParameters.employee_id ?? "")}
+          <AnnouncementUpdateForm
+            announcementId={String(pendingParameters.announcement_id ?? "")}
             disabled={disabled}
             onRespond={onRespond}
           />
@@ -879,9 +863,14 @@ export default function ToolResultCard({
 
       {interactive &&
         result.status === "needs_input" &&
-        missingField === "leave_type_id" &&
+        missingField === "updates" &&
+        result.tool !== "update_announcement" &&
         onRespond && (
-          <LeaveApplicationForm disabled={disabled} onRespond={onRespond} />
+          <EmployeeUpdateForm
+            employeeId={String(pendingParameters.employee_id ?? "")}
+            disabled={disabled}
+            onRespond={onRespond}
+          />
         )}
 
       {interactive &&
@@ -894,7 +883,59 @@ export default function ToolResultCard({
           <PendingLeaveRequestSelector disabled={disabled} onRespond={onRespond} />
         ))}
 
-      {interactive && result.status === "needs_input" && missingField && !["employee_id", "policy_file", "document_id", "updates", "leave_type_id", "request_id"].includes(missingField) && onRespond && (
+      {interactive &&
+        result.status === "needs_input" &&
+        missingField &&
+        !["document_id", "employee_id", "request_id"].includes(missingField) &&
+        suggestions.length > 0 &&
+        onRespond && (
+          <div className="mt-3 space-y-2 border-t border-warning/20 pt-3">
+            <p className="text-xs font-medium text-primary">
+              {FIELD_LABELS[missingField] ?? "Choose an option"}
+            </p>
+            <div
+              className="flex snap-x gap-2 overflow-x-auto pb-2"
+              aria-label={`${FIELD_LABELS[missingField] ?? missingField} options`}
+            >
+              {suggestions.map((suggestion, index) => {
+                const optionValue = String(suggestion.value ?? "");
+                const optionLabel = String(suggestion.label ?? optionValue);
+                return (
+                  <Button
+                    key={`${optionValue}-${index}`}
+                    type="button"
+                    variant="outline"
+                    className="h-auto min-w-44 snap-start items-start whitespace-normal px-3 py-2 text-left"
+                    disabled={disabled || !optionValue}
+                    onClick={() =>
+                      onRespond(optionValue, { [missingField]: optionValue }, optionLabel)
+                    }
+                  >
+                    <span>
+                      <span className="block text-xs font-medium">{optionLabel}</span>
+                      {typeof suggestion.description === "string" && suggestion.description && (
+                        <span className="mt-1 block text-[11px] font-normal text-muted-foreground">
+                          {suggestion.description}
+                        </span>
+                      )}
+                    </span>
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => onRespond("cancel")}
+              disabled={disabled}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+
+      {interactive && result.status === "needs_input" && missingField && suggestions.length === 0 && !["employee_id", "policy_file", "document_id", "updates", "request_id"].includes(missingField) && onRespond && (
         <form onSubmit={submitSlot} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
           <label className="block text-xs font-medium text-primary">
             {FIELD_LABELS[missingField] ?? "Required information"}
@@ -911,6 +952,8 @@ export default function ToolResultCard({
             ) : (
               <Input
                 type={inputType}
+                min={missingField === "end_date" ? minimumDate : undefined}
+                max={missingField === "date" ? new Date().toLocaleDateString("en-CA") : undefined}
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
                 placeholder={`Enter ${(FIELD_LABELS[missingField] ?? missingField).toLowerCase()}`}
@@ -921,6 +964,15 @@ export default function ToolResultCard({
             )}
             <Button size="sm" type="submit" disabled={disabled || !value.trim()}>
               Continue
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => onRespond("cancel")}
+              disabled={disabled}
+            >
+              Cancel
             </Button>
           </div>
         </form>
@@ -1056,7 +1108,25 @@ export default function ToolResultCard({
         </div>
       )}
 
-      {!balances.length && !employees.length && !policies.length && !policySummaries.length && !auditRecords.length && !leaveRequests.length && !holidays.length && !announcements.length && details.length > 0 && (
+      {managementRecords.length > 0 && (
+        <div className="mt-3 grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+          {managementRecords.map((item, index) => {
+            const record = isRecord(item) ? item : {};
+            const heading = record.name ?? record.title ?? record.email ?? "Record";
+            const subtitle = record.department
+              ?? record.description
+              ?? (record.role ? `${record.role} · ${record.is_active ? "active" : "inactive"}` : "");
+            return (
+              <div key={String(record.department_id ?? record.designation_id ?? record.user_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <p className="font-medium text-primary">{String(heading)}</p>
+                {Boolean(subtitle) && <p className="mt-1 text-muted-foreground">{String(subtitle)}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!balances.length && !employees.length && !policies.length && !policySummaries.length && !auditRecords.length && !leaveRequests.length && !holidays.length && !announcements.length && !managementRecords.length && details.length > 0 && (
         <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           {details.slice(0, 8).map(([key, item]) => (
             <div key={key} className="flex justify-between gap-2 border-b border-border/60 py-1">

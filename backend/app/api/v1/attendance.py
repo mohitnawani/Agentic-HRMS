@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.attendance import AttendanceCorrection, AttendanceRead, AttendanceSummary, MonthCalendar
+from app.schemas.attendance import (
+    AttendanceCorrection,
+    AttendanceDateCorrection,
+    AttendanceRead,
+    AttendanceSummary,
+    MonthCalendar,
+)
 from app.services import attendance_service, employee_service
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -95,3 +101,36 @@ async def correct(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     return await attendance_service.correct_attendance(db, attendance_id, current_user.id, data)
+
+
+@router.put(
+    "/{employee_id}/date/{attendance_date}",
+    response_model=AttendanceRead,
+    dependencies=[Depends(require_permission("attendance:correct"))],
+)
+async def correct_for_date(
+    employee_id: uuid.UUID,
+    attendance_date: date,
+    data: AttendanceDateCorrection,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if attendance_date.year < 2000 or attendance_date.year > 2100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date must be between year 2000 and 2100",
+        )
+    if attendance_date > datetime.now(UTC).date():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Future attendance cannot be corrected",
+        )
+    employee = await employee_service.get_employee(db, employee_id)
+    if attendance_date < employee.date_of_joining:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Attendance date cannot be before the employee's joining date",
+        )
+    return await attendance_service.correct_attendance_for_date(
+        db, employee.id, attendance_date, current_user.id, data
+    )

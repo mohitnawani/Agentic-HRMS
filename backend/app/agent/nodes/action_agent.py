@@ -3,7 +3,7 @@
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal, cast
 
 from fastapi import HTTPException
@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from app.agent.audit import audit_tool_result
 from app.agent.flows import TOOL_WORKFLOWS, missing_slots
 from app.agent.state import AgentRuntimeContext, AgentState, AgentToolResult
+from app.agent.tools.read_tools import get_leave_history, list_pending_leave_requests
 from app.agent.tools.write_tools import (
     WriteToolAccessDenied,
     WriteToolConflict,
@@ -22,26 +23,42 @@ from app.agent.tools.write_tools import (
     authorize_write_tool,
     cancel_leave,
     complete_policy_upload,
+    correct_employee_attendance,
     create_announcement,
     create_department,
+    create_designation,
     create_employee,
+    create_holiday,
+    create_leave_type,
+    delete_announcement,
+    delete_department,
+    delete_designation,
     delete_employee,
+    delete_holiday,
     delete_policy,
     preview_leave_application,
     record_attendance_action,
+    update_announcement,
     reject_leave,
     update_employee,
 )
+from app.models.announcement import Announcement
+from app.models.attendance import Attendance
 from app.models.department import Department
+from app.models.designation import Designation
 from app.models.employee import Employee
+from app.models.holiday import Holiday
 from app.models.leave import LeaveRequest, LeaveType
 from app.models.policy_document import PolicyDocument
 from app.models.user import User
-from app.schemas.announcement import AnnouncementCreate
+from app.schemas.announcement import AnnouncementCreate, AnnouncementUpdate
+from app.schemas.attendance import AttendanceDateCorrection
 from app.schemas.common import EmailT
 from app.schemas.department import DepartmentCreate
+from app.schemas.designation import DesignationCreate
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
-from app.schemas.leave import LeaveRequestCreate
+from app.schemas.holiday import HolidayCreate
+from app.schemas.leave import LeaveRequestCreate, LeaveTypeCreate
 
 ActionToolName = Literal[
     "create_employee",
@@ -49,14 +66,23 @@ ActionToolName = Literal[
     "delete_employee",
     "approve_leave",
     "reject_leave",
+    "create_leave_type",
     "create_department",
-    "create_announcement",
+    "delete_department",
+    "create_designation",
+    "delete_designation",
+      "create_announcement",
+      "update_announcement",
+      "delete_announcement",
+    "create_holiday",
+    "delete_holiday",
     "upload_policy",
     "delete_policy",
     "apply_leave",
     "cancel_leave",
     "check_in",
     "check_out",
+    "correct_attendance",
 ]
 
 UUID_PATTERN = re.compile(
@@ -74,6 +100,9 @@ CANCELLATION_WORDS = {
     "cancel",
     "stop",
     "abort",
+    "exit",
+    "exit flow",
+    "quit",
     "never mind",
     "nevermind",
     "leave it",
@@ -92,7 +121,11 @@ FIELD_PROMPTS = {
     "employee_id": "What is the employee ID?",
     "request_id": "What is the leave request ID?",
     "updates": "Which employee fields should be updated?",
-    "name": "What is the department name?",
+    "name": "What name should be used?",
+    "department_id": "Which department should be used?",
+    "designation_id": "Which designation should be deleted?",
+    "announcement_id": "Which announcement should be deleted?",
+    "holiday_id": "Which holiday should be deleted?",
     "title": "What title should be used?",
     "body": "What should the announcement say?",
     "category": "What category should this policy use?",
@@ -102,7 +135,119 @@ FIELD_PROMPTS = {
     "start_date": "What is the leave start date? Please use YYYY-MM-DD.",
     "end_date": "What is the leave end date? Please use YYYY-MM-DD.",
     "reason": "What is the reason for your leave?",
+    "date": "Which attendance date should be corrected?",
+    "status": "What should the attendance status be?",
+    "correction_reason": "Why is this attendance being corrected?",
+    "leave_type_name": "What is the leave type name?",
+    "annual_days": "How many days should employees receive each year?",
 }
+
+
+LEAVE_TYPE_PRESENTATION = {
+    "Casual Leave": ("Casual Leave (CL)", "Short personal work or urgent needs"),
+    "Sick Leave": ("Sick Leave (SL)", "Illness or medical reasons"),
+    "Earned Leave / Privilege Leave": (
+        "Earned Leave / Privilege Leave (EL/PL)",
+        "Accumulated paid leave for planned time off",
+    ),
+    "Maternity Leave": ("Maternity Leave", "Childbirth and recovery"),
+    "Paternity Leave": ("Paternity Leave", "Leave for new fathers"),
+    "Bereavement Leave": ("Bereavement Leave", "Death of a close family member"),
+    "Marriage Leave": ("Marriage Leave", "The employee's wedding"),
+    "Compensatory Off": (
+        "Compensatory Off (Comp Off)",
+        "Earned by working on holidays or weekends",
+    ),
+    "Unpaid Leave / Loss of Pay": (
+        "Unpaid Leave / Loss of Pay (LOP)",
+        "Used when paid leave is unavailable",
+    ),
+}
+
+
+async def _slot_suggestions(
+    tool: str,
+    missing: str,
+    state: AgentState,
+    db,
+) -> tuple[list[dict[str, str]], str | None]:
+    """Clickable options for the field being collected.
+
+    Returns (suggestions, prompt_override). Only called after the tool's own
+    authorization, so listing rows here never leaks beyond what the caller
+    may already act on.
+    """
+    if missing == "employee_id":
+        rows = list((await db.scalars(select(Employee).order_by(Employee.first_name, Employee.last_name).limit(30))).all())
+        return [{"label": f"{row.first_name} {row.last_name}", "value": str(row.id)} for row in rows], None
+    if missing == "department_id":
+        rows = list((await db.scalars(select(Department).order_by(Department.name))).all())
+        return [{"label": row.name, "value": str(row.id)} for row in rows], None
+    if missing == "designation_id":
+        rows = list((await db.scalars(select(Designation).order_by(Designation.title))).all())
+        return [{"label": row.title, "value": str(row.id)} for row in rows], None
+    if missing == "holiday_id":
+        rows = list((await db.scalars(select(Holiday).order_by(Holiday.date))).all())
+        return [{"label": f"{row.name} · {row.date}", "value": str(row.id)} for row in rows], None
+    if missing == "announcement_id":
+        rows = list((await db.scalars(select(Announcement).order_by(Announcement.created_at.desc()).limit(30))).all())
+        return [{"label": row.title, "value": str(row.id)} for row in rows], None
+    if missing == "user_id":
+        rows = list((await db.scalars(select(User).order_by(User.email).limit(40))).all())
+        return [{"label": f"{row.email} · {row.role.value}", "value": str(row.id)} for row in rows if row.id != state["user_id"]], None
+    if missing == "attendance_id":
+        rows = (await db.execute(select(Attendance, Employee).join(Employee, Employee.id == Attendance.employee_id).order_by(Attendance.date.desc()).limit(30))).all()
+        return [{"label": f"{employee.first_name} {employee.last_name} · {record.date} · {record.status.value}", "value": str(record.id)} for record, employee in rows], None
+    if missing == "document_id":
+        rows = list((await db.scalars(select(PolicyDocument).order_by(PolicyDocument.title).limit(30))).all())
+        return [{"label": f"{row.title} · {row.category}", "value": str(row.id)} for row in rows], None
+    if missing == "role":
+        return [{"label": label, "value": value} for label, value in (("Employee", "employee"), ("HR", "hr"), ("Admin", "admin"))], None
+    if missing == "active":
+        return [{"label": "Activate", "value": "true"}, {"label": "Deactivate", "value": "false"}], None
+    if missing == "status":
+        return [{"label": value.replace("_", " ").title(), "value": value} for value in ("present", "absent", "late", "half_day")], None
+    if missing == "field":
+        fields_by_tool = {
+            "update_employee": ("first_name", "last_name", "phone", "date_of_joining", "department_id", "designation_id", "city", "address"),
+            "update_department": ("name", "description"),
+            "update_designation": ("title", "department_id"),
+            "update_holiday": ("name", "date"),
+            "update_announcement": ("title", "body", "is_active"),
+        }
+        return [{"label": value.replace("_", " ").title(), "value": value} for value in fields_by_tool.get(tool, ())], None
+    if tool == "apply_leave" and missing == "leave_type_id":
+        leave_types = list((await db.scalars(select(LeaveType).order_by(LeaveType.name))).all())
+        options = ", ".join(item.name for item in leave_types)
+        prompt = f"Which leave type would you like to use? Available types: {options}." if options else None
+        return [
+            {
+                "label": LEAVE_TYPE_PRESENTATION.get(item.name, (item.name, ""))[0],
+                "value": str(item.id),
+                "description": LEAVE_TYPE_PRESENTATION.get(item.name, (item.name, ""))[1],
+            }
+            for item in leave_types
+        ], prompt
+    if missing == "request_id" and tool in {"approve_leave", "reject_leave"}:
+        requests = await list_pending_leave_requests(state, db)
+        return [
+            {
+                "label": f"{item['employee']} · {item['leave_type']} · {item['start_date']} to {item['end_date']}",
+                "value": str(item["request_id"]),
+            }
+            for item in requests[:12]
+        ], None
+    if missing == "request_id" and tool == "cancel_leave":
+        requests = await get_leave_history(state, db)
+        return [
+            {
+                "label": f"{item['leave_type']} · {item['start_date']} to {item['end_date']}",
+                "value": str(item["request_id"]),
+            }
+            for item in requests
+            if item["status"] == "pending"
+        ][:12], None
+    return [], None
 
 
 def select_action_tool(message: str) -> ActionToolName | None:
@@ -112,6 +257,10 @@ def select_action_tool(message: str) -> ActionToolName | None:
         (r"\b(update|change|edit)\b.*\b(employees?|users?)\b", "update_employee"),
         (r"\b(delete|remove)\b.*\b(employees?|users?)\b", "delete_employee"),
         (r"\b(delete|remove)\b.*\b(policies|policy|documents?)\b", "delete_policy"),
+        (r"\b(delete|remove)\b.*\bdepartments?\b", "delete_department"),
+        (r"\b(delete|remove)\b.*\bdesignations?\b", "delete_designation"),
+        (r"\b(delete|remove)\b.*\bannouncements?\b", "delete_announcement"),
+        (r"\b(delete|remove)\b.*\bholidays?\b", "delete_holiday"),
         (
             (
                 r"^\s*(?:i\s+want\s+to\s+)?(?:delete|remove)\s+"
@@ -121,14 +270,25 @@ def select_action_tool(message: str) -> ActionToolName | None:
         ),
         (r"\bapprove\b.*\bleave\b", "approve_leave"),
         (r"\breject\b.*\bleave\b", "reject_leave"),
+        (r"\b(create|add)\b.*\bleave\s+types?\b", "create_leave_type"),
         (r"\bapply\b.*\bleave\b", "apply_leave"),
         (r"\bcancel\b.*\bleave\b", "cancel_leave"),
         (r"\bcheck[ -]?in\b", "check_in"),
         (r"\bcheck[ -]?out\b", "check_out"),
+        (
+            r"\b(correct|fix|change|update)\b.*\battendance\b",
+            "correct_attendance",
+        ),
         (r"\b(create|add)\b.*\bdepartments?\b", "create_department"),
+        (r"\b(create|add)\b.*\bdesignations?\b", "create_designation"),
+        (r"\b(create|add)\b.*\bholidays?\b", "create_holiday"),
         (
             r"\b(create|add|post|publish)\b.*\bannouncements?\b",
             "create_announcement",
+        ),
+        (
+            r"\b(update|change|edit)\b.*\bannouncements?\b",
+            "update_announcement",
         ),
         (
             r"\b(upload|add|create)\b.*\b(policies|policy|documents?)\b",
@@ -177,18 +337,26 @@ def _extract_initial_payload(
     if supplied_employee and not payload.get("employee_id"):
         payload["employee_name"] = str(supplied_employee).strip()
     uuid_match = UUID_PATTERN.search(message)
-    if uuid_match and tool in {"update_employee", "delete_employee"}:
+    if uuid_match and tool in {"update_employee", "delete_employee", "correct_attendance"}:
         payload.setdefault("employee_id", uuid_match.group())
     if uuid_match and tool in {"approve_leave", "reject_leave", "cancel_leave"}:
         payload.setdefault("request_id", uuid_match.group())
     if uuid_match and tool == "delete_policy":
         payload.setdefault("document_id", uuid_match.group())
+    id_fields = {
+        "delete_department": "department_id",
+        "delete_designation": "designation_id",
+        "delete_announcement": "announcement_id",
+        "delete_holiday": "holiday_id",
+    }
+    if uuid_match and tool in id_fields:
+        payload.setdefault(id_fields[tool], uuid_match.group())
 
-    if tool in {"update_employee", "delete_employee"} and not payload.get(
+    if tool in {"update_employee", "delete_employee", "correct_attendance"} and not payload.get(
         "employee_id"
     ):
         name_match = re.search(
-            r"\b(?:update|change|edit|delete|remove)\b\s+(?:the\s+)?"
+            r"\b(?:update|change|edit|delete|remove|correct|fix)\b\s+(?:the\s+)?"
             r"(?:employee|user)\s+([A-Za-z][A-Za-z' -]{0,199})$",
             message,
             flags=re.IGNORECASE,
@@ -230,12 +398,52 @@ def _extract_initial_payload(
         if match:
             payload["name"] = match.group(1).strip(" \"'")
 
+    if tool == "create_designation" and not payload.get("title"):
+        match = re.search(
+            r"\bdesignation(?:\s+(?:named|called))?\s+(.+?)(?:\s+in\s+department\b|$)",
+            message,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            payload["title"] = match.group(1).strip(" \"'")
+
+    if tool == "create_holiday":
+        date_match = DATE_PATTERN.search(message)
+        if date_match:
+            payload.setdefault("date", date_match.group())
+        if not payload.get("name"):
+            match = re.search(
+                r"\bholiday(?:\s+(?:named|called))?\s+(.+?)(?:\s+on\s+\d{4}-\d{2}-\d{2}|$)",
+                message,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                payload["name"] = match.group(1).strip(" \"'")
+
+    if tool == "create_leave_type" and not payload.get("leave_type_name"):
+        match = re.search(
+            r"\bleave\s+type(?:\s+(?:named|called))?\s+(.+)$",
+            message,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            payload["leave_type_name"] = match.group(1).strip(" \"'")
+
     if tool in {"create_announcement", "upload_policy"} and not payload.get("title"):
         quoted_title = re.search(r"[\"']([^\"']+)[\"']", message)
         if quoted_title:
             payload["title"] = quoted_title.group(1).strip()
 
     normalized = message.lower()
+    if tool == "correct_attendance":
+        date_match = DATE_PATTERN.search(message)
+        if date_match:
+            payload.setdefault("date", date_match.group())
+        for attendance_status in ("present", "absent", "late", "half_day"):
+            readable = attendance_status.replace("_", " ")
+            if re.search(rf"\b{re.escape(readable)}\b", normalized):
+                payload.setdefault("status", attendance_status)
+                break
     if tool == "delete_employee" and (
         "delete all" in normalized or "bulk" in normalized
     ):
@@ -277,12 +485,7 @@ async def _resolve_employee_name(
     if not rows:
         payload.pop("employee_name", None)
         return f"I could not find an employee named {candidate.title()}. Select an employee."
-    options = "; ".join(
-        f"{employee.first_name} {employee.last_name} "
-        f"({department or 'No department'}, ID: {employee.id})"
-        for employee, department in rows
-    )
-    return f"I found multiple matching employees: {options}. Select the correct employee."
+    return "I found multiple employees with that name. Select the correct employee."
 
 
 def _missing_field(tool: ActionToolName, payload: dict[str, object]) -> str | None:
@@ -337,7 +540,7 @@ async def _enrich_confirmation(
     tool: ActionToolName, payload: dict[str, object], db
 ) -> None:
     """Resolve affected records before confirmation; never ask users to sign blanks."""
-    if tool in {"update_employee", "delete_employee"} and payload.get("employee_id"):
+    if tool in {"update_employee", "delete_employee", "correct_attendance"} and payload.get("employee_id"):
         employee_id = uuid.UUID(str(payload["employee_id"]))
         row = (
             await db.execute(
@@ -377,6 +580,38 @@ async def _enrich_confirmation(
         if document is None:
             raise WriteToolConflict("Policy document not found.")
         payload["_target_summary"] = f"{document.title} ({document.category})"
+    elif tool == "delete_department" and payload.get("department_id"):
+        record = await db.get(Department, uuid.UUID(str(payload["department_id"])))
+        if record is None:
+            raise WriteToolConflict("Department not found.")
+        payload["_target_summary"] = record.name
+    elif tool == "delete_designation" and payload.get("designation_id"):
+        record = await db.get(Designation, uuid.UUID(str(payload["designation_id"])))
+        if record is None:
+            raise WriteToolConflict("Designation not found.")
+        payload["_target_summary"] = record.title
+    elif tool == "delete_announcement" and payload.get("announcement_id"):
+        record = await db.get(Announcement, uuid.UUID(str(payload["announcement_id"])))
+        if record is None:
+            raise WriteToolConflict("Announcement not found.")
+        payload["_target_summary"] = record.title
+    elif tool == "update_announcement" and payload.get("announcement_id"):
+        record = await db.get(Announcement, uuid.UUID(str(payload["announcement_id"])))
+        if record is None:
+            raise WriteToolConflict("Announcement not found.")
+        payload["_target_summary"] = record.title
+    elif tool == "delete_holiday" and payload.get("holiday_id"):
+        record = await db.get(Holiday, uuid.UUID(str(payload["holiday_id"])))
+        if record is None:
+            raise WriteToolConflict("Holiday not found.")
+        payload["_target_summary"] = f"{record.name} on {record.date}"
+    elif tool == "create_designation" and payload.get("department_id"):
+        department = await db.get(
+            Department, uuid.UUID(str(payload["department_id"]))
+        )
+        if department is None:
+            raise WriteToolConflict("Department not found.")
+        payload["_department_name"] = department.name
 
 
 async def _validate_employee_email(payload: dict[str, object], db) -> str | None:
@@ -413,15 +648,17 @@ def _merge_slot_answer(
     if field == "email":
         match = EMAIL_PATTERN.search(normalized)
         payload[field] = match.group() if match else normalized
-    elif field == "date_of_joining":
+    elif field in {"date_of_joining", "date"}:
         match = DATE_PATTERN.search(normalized)
         payload[field] = match.group() if match else normalized
-    elif field in {"employee_id", "request_id"}:
+    elif field.endswith("_id"):
         match = UUID_PATTERN.search(normalized)
         payload[field] = match.group() if match else normalized
     elif field == "updates":
         if supplied:
             payload[field] = supplied.get("updates", supplied)
+    elif field == "status":
+        payload[field] = normalized.lower().replace("-", "_").replace(" ", "_")
     else:
         payload[field] = normalized
     return field == "password"
@@ -455,6 +692,8 @@ def _pending_result(
     interaction: dict[str, object] = {"stage": stage}
     if missing_field:
         interaction["missing_field"] = missing_field
+    if missing_field == "end_date" and payload.get("start_date"):
+        interaction["min_date"] = payload["start_date"]
     if tool == "upload_policy" and missing_field == "policy_file":
         interaction["parameters"] = {
             "title": payload.get("title", ""),
@@ -506,12 +745,39 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
             f"Update {payload.get('_target_summary', 'this employee')}: {names}. "
             "No changes have been made. Confirm?"
         )
+    if tool == "update_announcement":
+        fields = payload.get("updates", {})
+        names = ", ".join(fields) if isinstance(fields, dict) else "selected fields"
+        return (
+            f"Update {payload.get('_target_summary', 'this announcement')}: {names}. "
+            "No changes have been made. Confirm?"
+        )
     if tool == "create_department":
         return f"Create department: {payload.get('name')}. Confirm?"
+    if tool == "create_designation":
+        return (
+            f"Create designation {payload.get('title')} in "
+            f"{payload.get('_department_name', payload.get('department_id'))}. Confirm?"
+        )
+    if tool == "create_holiday":
+        return f"Create holiday {payload.get('name')} on {payload.get('date')}. Confirm?"
+    if tool == "create_leave_type":
+        return (
+            f"Create leave type {payload.get('leave_type_name')} with "
+            f"{payload.get('annual_days')} days per year. Confirm?"
+        )
     if tool == "create_announcement":
         return (
             f"Publish announcement: {payload.get('title')}\n"
             f"Message: {payload.get('body')}\nConfirm?"
+        )
+    if tool == "correct_attendance":
+        return (
+            "Please confirm this attendance correction:\n"
+            f"Employee: {payload.get('_target_summary', payload.get('employee_id'))}\n"
+            f"Date: {payload.get('date')}\n"
+            f"Status: {str(payload.get('status')).replace('_', ' ').title()}\n"
+            f"Reason: {payload.get('correction_reason')}\nConfirm?"
         )
     if tool == "upload_policy":
         return (
@@ -523,9 +789,14 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         "approve_leave": "approve this leave request",
         "reject_leave": "reject this leave request",
         "create_announcement": "publish this announcement",
+        "update_announcement": "update this announcement",
         "apply_leave": "submit this leave request",
         "cancel_leave": "cancel this leave request",
         "delete_policy": "permanently delete this policy document",
+        "delete_department": "delete this department",
+        "delete_designation": "delete this designation",
+        "delete_announcement": "delete this announcement",
+        "delete_holiday": "delete this holiday",
     }
     if tool == "delete_employee":
         return (
@@ -533,7 +804,10 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
             f"account: {payload.get('_target_summary', payload.get('employee_id'))}. "
             "Confirm?"
         )
-    if tool in {"approve_leave", "reject_leave", "cancel_leave", "delete_policy"}:
+    if tool in {
+        "approve_leave", "reject_leave", "cancel_leave", "delete_policy",
+        "delete_department", "delete_designation", "delete_announcement", "delete_holiday",
+    }:
         return (
             f"Please confirm: {labels[tool]} — "
             f"{payload.get('_target_summary', 'selected record')}. Confirm?"
@@ -553,14 +827,23 @@ def _execution_state(
         "delete_employee": "Delete employee",
         "approve_leave": "Approve leave request",
         "reject_leave": "Reject leave request",
+        "create_leave_type": "Create leave type",
         "create_department": "Create department",
+        "delete_department": "Delete department",
+        "create_designation": "Create designation",
+        "delete_designation": "Delete designation",
         "create_announcement": "Create announcement",
+        "update_announcement": "Update announcement",
+        "delete_announcement": "Delete announcement",
+        "create_holiday": "Create holiday",
+        "delete_holiday": "Delete holiday",
         "upload_policy": "Upload policy",
         "delete_policy": "Delete policy",
         "apply_leave": "Apply for leave",
         "cancel_leave": "Cancel leave request",
         "check_in": "Check in",
         "check_out": "Check out",
+        "correct_attendance": "Correct attendance",
     }
     return {**state, "message": messages[tool], "action_payload": payload}
 
@@ -603,11 +886,44 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
     elif tool == "reject_leave":
         data = await reject_leave(state, db, _target_id(state, "request_id"))
         message = "Leave request rejected."
+    elif tool == "create_leave_type":
+        data = await create_leave_type(
+            state,
+            db,
+            LeaveTypeCreate.model_validate(
+                {
+                    "name": payload["leave_type_name"],
+                    "default_annual_days": payload["annual_days"],
+                }
+            ),
+        )
+        message = (
+            f"Created leave type {data['name']} with "
+            f"{data['default_annual_days']} days per year."
+        )
     elif tool == "create_announcement":
         data = await create_announcement(
             state, db, AnnouncementCreate.model_validate(payload)
         )
         message = f"Published announcement {data['title']}."
+    elif tool == "delete_announcement":
+        data = await delete_announcement(state, db, _target_id(state, "announcement_id"))
+        message = f"Deleted announcement {data['title']}."
+    elif tool == "update_announcement":
+        announcement_id = _target_id(state, "announcement_id")
+        update_data = payload.get("updates", payload)
+        if isinstance(update_data, dict):
+            update_data = {k: v for k, v in update_data.items() if k != "announcement_id"}
+        data = await update_announcement(
+            state, db, announcement_id, AnnouncementUpdate.model_validate(update_data)
+        )
+        message = f"Updated announcement {data['title']}."
+    elif tool == "create_holiday":
+        data = await create_holiday(state, db, HolidayCreate.model_validate(payload))
+        message = f"Created holiday {data['name']} on {data['date']}."
+    elif tool == "delete_holiday":
+        data = await delete_holiday(state, db, _target_id(state, "holiday_id"))
+        message = f"Deleted holiday {data['name']}."
     elif tool == "upload_policy":
         data = await complete_policy_upload(
             state, db, _target_id(state, "document_id")
@@ -631,6 +947,33 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             if tool == "check_in"
             else "Checked out successfully."
         )
+    elif tool == "correct_attendance":
+        attendance_date = date.fromisoformat(str(payload["date"]))
+        data = await correct_employee_attendance(
+            state,
+            db,
+            _target_id(state, "employee_id"),
+            attendance_date,
+            AttendanceDateCorrection.model_validate(
+                {
+                    "status": payload["status"],
+                    "correction_reason": payload["correction_reason"],
+                }
+            ),
+        )
+        message = (
+            f"Corrected {data['employee']}'s attendance for {data['date']} "
+            f"to {str(data['status']).replace('_', ' ')}."
+        )
+    elif tool == "delete_department":
+        data = await delete_department(state, db, _target_id(state, "department_id"))
+        message = f"Deleted department {data['name']}."
+    elif tool == "create_designation":
+        data = await create_designation(state, db, DesignationCreate.model_validate(payload))
+        message = f"Created designation {data['title']} in {data['department']}."
+    elif tool == "delete_designation":
+        data = await delete_designation(state, db, _target_id(state, "designation_id"))
+        message = f"Deleted designation {data['title']}."
     else:
         data = await create_department(state, db, _department_data(state))
         message = f"Created department {data['name']}."
@@ -648,7 +991,9 @@ async def handle_action(
 ) -> tuple[AgentToolResult, dict[str, object] | None, bool]:
     """Collect missing slots, gate sensitive actions, then execute."""
     pending = state.get("pending_action")
-    requested_tool = select_action_tool(state["message"])
+    # While a workflow is active, the message is always an answer to that
+    # workflow. New action phrases cannot replace it; users must cancel/exit.
+    requested_tool = None if pending else select_action_tool(state["message"])
     if (
         pending
         and requested_tool is not None
@@ -856,7 +1201,7 @@ async def handle_action(
             )
             return result, next_pending, sanitized
 
-    if tool in {"update_employee", "delete_employee"}:
+    if tool in {"update_employee", "delete_employee", "correct_attendance"}:
         resolution_error = await _resolve_employee_name(payload, db)
         if resolution_error:
             result, next_pending = _pending_result(
@@ -871,14 +1216,20 @@ async def handle_action(
 
     missing = _missing_field(tool, payload)
     if missing:
+        prompt = FIELD_PROMPTS[missing]
+        suggestions, prompt_override = await _slot_suggestions(tool, missing, state, db)
+        if prompt_override:
+            prompt = prompt_override
         result, next_pending = _pending_result(
             tool,
             payload,
             "slots",
-            FIELD_PROMPTS[missing],
+            prompt,
             missing,
             previous=pending,
         )
+        if suggestions:
+            result.setdefault("data", {})["suggestions"] = suggestions
         return result, next_pending, sanitized
 
     if tool == "apply_leave":

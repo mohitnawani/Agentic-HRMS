@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.nodes.database_agent import run_database_query, select_database_tool
 from app.agent.nodes.rag_agent import run_policy_rag
 from app.agent.state import AgentState
+from app.agent.supervisor import classify_intent
 from app.agent.tools.read_tools import (
     ReadToolAccessDenied,
     get_attendance_summary,
@@ -176,6 +177,48 @@ def test_policy_count_and_list_prompts_select_catalog_tool():
     assert select_database_tool("how many policie are ther") == "get_policy_catalog"
     assert select_database_tool("List all policy documents") == "get_policy_catalog"
     assert select_database_tool("Show available policies") == "get_policy_catalog"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "What is my name?",
+        "Tell me my employee ID",
+        "What is my email and phone?",
+        "When is my joining date?",
+        "What is my role?",
+        "Show my department and designation",
+        "Show my full profile",
+        "what is my emial",
+    ],
+)
+def test_profile_questions_route_to_employee_details(query):
+    assert classify_intent(query) == "database"
+    assert select_database_tool(query) == "get_employee_details"
+
+
+@pytest.mark.asyncio
+async def test_own_profile_query_returns_requested_authenticated_user_fields():
+    async with async_session() as db:
+        actor, employee = await create_actor(db, RoleEnum.EMPLOYEE, "profile")
+        employee.phone = "+919876543210"
+        await db.flush()
+
+        result = await run_database_query(
+            state_for(actor, "What is my name, email, phone, joining date and role?"),
+            db,
+        )
+
+        assert result["tool"] == "get_employee_details"
+        assert result["data"] == {
+            "full_name": "Profile Tester",
+            "email": actor.email,
+            "role": "employee",
+            "phone": "+919876543210",
+            "date_of_joining": employee.date_of_joining.isoformat(),
+        }
+        assert actor.email in result["message"]
+        await db.rollback()
 
 
 @pytest.mark.asyncio

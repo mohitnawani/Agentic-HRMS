@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import Attendance, AttendanceStatus
 from app.models.leave import LeaveRequest, LeaveRequestStatus, LeaveType
-from app.schemas.attendance import AttendanceCorrection
+from app.schemas.attendance import AttendanceCorrection, AttendanceDateCorrection
 
 # office policy: 9 AM – 6 PM, Saturday/Sunday off
 WORK_START = datetime.time(9, 0)
@@ -120,6 +120,48 @@ async def correct_attendance(
         )
     if data.status is not None:
         record.status = data.status
+    record.corrected_by = corrected_by
+    record.correction_reason = data.correction_reason
+
+    await db.commit()
+    await db.refresh(record)
+    return record
+
+
+async def correct_attendance_for_date(
+    db: AsyncSession,
+    employee_id: uuid.UUID,
+    attendance_date: datetime.date,
+    corrected_by: uuid.UUID,
+    data: AttendanceDateCorrection,
+) -> Attendance:
+    """Update a stored day or create the missing row for an absence correction."""
+    result = await db.execute(
+        select(Attendance).where(
+            Attendance.employee_id == employee_id,
+            Attendance.date == attendance_date,
+        )
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        record = Attendance(employee_id=employee_id, date=attendance_date)
+        db.add(record)
+
+    provided = data.model_fields_set
+    if "check_in" in provided:
+        record.check_in = data.check_in
+    if "check_out" in provided:
+        record.check_out = data.check_out
+    record.status = data.status
+    if (
+        record.check_in is not None
+        and record.check_out is not None
+        and record.check_out <= record.check_in
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="check_out must be after check_in",
+        )
     record.corrected_by = corrected_by
     record.correction_reason = data.correction_reason
 

@@ -39,5 +39,7 @@ class AgentMessage(Base, TimestampMixin):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_results: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     conversation: Mapped[AgentConversation] = relationship(back_populates="messages")

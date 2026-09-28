@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
 import { useUsers, useCreateUser, useActivateUser, useDeactivateUser, useUpdateUserEmail } from "./useUsers";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setEmail as setAuthenticatedEmail } from "@/store/authSlice";
@@ -48,6 +49,7 @@ export default function UsersPage() {
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [toDeactivate, setToDeactivate] = useState<ManagedUser | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const myEmail = useAppSelector((s) => s.auth.email);
 
@@ -241,7 +243,7 @@ export default function UsersPage() {
                       variant="outline"
                       disabled={u.email.toLowerCase() === myEmail?.toLowerCase()}
                       title={u.email.toLowerCase() === myEmail?.toLowerCase() ? "You cannot deactivate your own account" : undefined}
-                      onClick={() => deactivateUser.mutate(u.id)}
+                      onClick={() => setToDeactivate(u)}
                     >
                       Deactivate
                     </Button>
@@ -256,6 +258,21 @@ export default function UsersPage() {
           ]}
         />
       )}
+      <ConfirmActionDialog
+        open={toDeactivate !== null}
+        title="Deactivate user account?"
+        description={<>This will prevent <strong>{toDeactivate?.email}</strong> from signing in until an admin activates the account again.</>}
+        confirmLabel="Deactivate account"
+        pending={deactivateUser.isPending}
+        error={deactivateUser.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deactivateUser.isPending) setToDeactivate(null);
+        }}
+        onConfirm={() => {
+          if (!toDeactivate) return;
+          deactivateUser.mutate(toDeactivate.id, { onSuccess: () => setToDeactivate(null) });
+        }}
+      />
     </div>
   );
 }

@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.nodes.action_agent import run_action, select_action_tool
 from app.agent.state import AgentState
-from app.agent.tools.write_tools import WriteToolAccessDenied, delete_employee
+from app.agent.tools.write_tools import WriteToolAccessDenied, delete_employee, update_announcement
 from app.db.session import async_session
+from app.models.announcement import Announcement
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.role import RoleEnum
@@ -170,7 +171,106 @@ async def test_only_admin_can_create_department():
         ("Approve this leave request", "approve_leave"),
         ("Reject this leave request", "reject_leave"),
         ("Create a department", "create_department"),
+        ("Update announcement Holiday Party", "update_announcement"),
+        ("Change the announcement about parking", "update_announcement"),
+        ("Edit announcement Diwali holidays", "update_announcement"),
     ],
 )
 def test_all_day18_actions_are_selectable(message, expected):
     assert select_action_tool(message) == expected
+
+
+@pytest.mark.asyncio
+async def test_hr_can_update_announcement_through_assistant():
+    async with async_session() as db:
+        actor, actor_employee = await create_actor(db, RoleEnum.HR, "ann_hr")
+        announcement = Announcement(
+            title="Holiday Party",
+            body="Old details",
+            created_by=actor.id,
+            is_active=True,
+        )
+        db.add(announcement)
+        await db.commit()
+        announcement_id = announcement.id
+
+        result = await run_action(
+            state_for(
+                actor,
+                "Update announcement Holiday Party",
+                announcement_id=str(announcement_id),
+                updates={"title": "Holiday Party Updated", "body": "New details"},
+            ),
+            db,
+        )
+
+        assert result["status"] == "success"
+        assert result["tool"] == "update_announcement"
+        refreshed = await db.get(Announcement, announcement_id)
+        assert refreshed.title == "Holiday Party Updated"
+        assert refreshed.body == "New details"
+
+        await db.delete(refreshed)
+        await db.execute(delete(Employee).where(Employee.id == actor_employee.id))
+        await db.execute(delete(User).where(User.id == actor.id))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_admin_can_toggle_announcement_visibility_through_assistant():
+    async with async_session() as db:
+        actor, actor_employee = await create_actor(db, RoleEnum.ADMIN, "ann_admin")
+        announcement = Announcement(
+            title="Parking Notice",
+            body="Lot closed",
+            created_by=actor.id,
+            is_active=True,
+        )
+        db.add(announcement)
+        await db.commit()
+        announcement_id = announcement.id
+
+        result = await run_action(
+            state_for(
+                actor,
+                "Update announcement Parking Notice",
+                announcement_id=str(announcement_id),
+                updates={"is_active": False},
+            ),
+            db,
+        )
+
+        assert result["status"] == "success"
+        assert (await db.get(Announcement, announcement_id)).is_active is False
+
+        await db.delete(await db.get(Announcement, announcement_id))
+        await db.execute(delete(Employee).where(Employee.id == actor_employee.id))
+        await db.execute(delete(User).where(User.id == actor.id))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_employee_update_announcement_is_denied_without_database_write():
+    async with async_session() as db:
+        actor, actor_employee = await create_actor(db, RoleEnum.EMPLOYEE, "ann_denied")
+        announcement = Announcement(
+            title="Secret Meeting",
+            body="Original",
+            created_by=actor.id,
+            is_active=True,
+        )
+        db.add(announcement)
+        await db.flush()
+        announcement_id = announcement.id
+        original_title = announcement.title
+
+        with pytest.raises(WriteToolAccessDenied):
+            await update_announcement(
+                state_for(actor, "Update announcement Secret Meeting"),
+                db,
+                announcement_id,
+                {"title": "Hacked"},  # type: ignore[arg-type]
+            )
+
+        assert (await db.get(Announcement, announcement_id)).title == original_title
+        await db.rollback()

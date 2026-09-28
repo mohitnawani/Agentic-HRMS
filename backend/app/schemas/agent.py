@@ -57,6 +57,8 @@ class AgentConversationMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    tool_results: list[dict[str, object]] = Field(default_factory=list)
+    sources: list[AgentSource] = Field(default_factory=list)
 
 
 class AgentPendingInteraction(BaseModel):

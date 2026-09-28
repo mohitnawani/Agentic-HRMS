@@ -13,14 +13,23 @@ WorkflowIntent = Literal[
     "DELETE_EMPLOYEE",
     "APPROVE_LEAVE",
     "REJECT_LEAVE",
+    "CREATE_LEAVE_TYPE",
     "CREATE_DEPARTMENT",
+    "DELETE_DEPARTMENT",
+    "CREATE_DESIGNATION",
+    "DELETE_DESIGNATION",
     "CREATE_ANNOUNCEMENT",
+    "UPDATE_ANNOUNCEMENT",
+    "DELETE_ANNOUNCEMENT",
+    "CREATE_HOLIDAY",
+    "DELETE_HOLIDAY",
     "UPLOAD_POLICY",
     "DELETE_POLICY",
     "APPLY_LEAVE",
     "CANCEL_LEAVE",
     "CHECK_IN",
     "CHECK_OUT",
+    "CORRECT_ATTENDANCE",
 ]
 
 
@@ -50,11 +59,35 @@ WORKFLOWS: dict[WorkflowIntent, WorkflowSpec] = {
     "REJECT_LEAVE": WorkflowSpec(
         "reject_leave", "leave:approve", ("request_id",)
     ),
+    "CREATE_LEAVE_TYPE": WorkflowSpec(
+        "create_leave_type", "leave:type_write", ("leave_type_name", "annual_days")
+    ),
     "CREATE_DEPARTMENT": WorkflowSpec(
         "create_department", "department:write", ("name",)
     ),
+    "DELETE_DEPARTMENT": WorkflowSpec(
+        "delete_department", "department:write", ("department_id",), "strong"
+    ),
+    "CREATE_DESIGNATION": WorkflowSpec(
+        "create_designation", "designation:write", ("title", "department_id")
+    ),
+    "DELETE_DESIGNATION": WorkflowSpec(
+        "delete_designation", "designation:write", ("designation_id",), "strong"
+    ),
     "CREATE_ANNOUNCEMENT": WorkflowSpec(
         "create_announcement", "announcement:write", ("title", "body")
+    ),
+    "UPDATE_ANNOUNCEMENT": WorkflowSpec(
+        "update_announcement", "announcement:write", ("announcement_id", "updates")
+    ),
+    "DELETE_ANNOUNCEMENT": WorkflowSpec(
+        "delete_announcement", "announcement:write", ("announcement_id",), "strong"
+    ),
+    "CREATE_HOLIDAY": WorkflowSpec(
+        "create_holiday", "holiday:write", ("name", "date")
+    ),
+    "DELETE_HOLIDAY": WorkflowSpec(
+        "delete_holiday", "holiday:write", ("holiday_id",), "strong"
     ),
     "UPLOAD_POLICY": WorkflowSpec(
         "upload_policy",
@@ -77,6 +110,11 @@ WORKFLOWS: dict[WorkflowIntent, WorkflowSpec] = {
     ),
     "CHECK_OUT": WorkflowSpec(
         "check_out", "attendance:check_in_out", (), "none"
+    ),
+    "CORRECT_ATTENDANCE": WorkflowSpec(
+        "correct_attendance",
+        "attendance:correct",
+        ("employee_id", "date", "status", "correction_reason"),
     ),
 }
 

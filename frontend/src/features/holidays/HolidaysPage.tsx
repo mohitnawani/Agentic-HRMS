@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
 import { useAppSelector } from "@/store/hooks";
 import { useHolidays, useCreateHoliday, useDeleteHoliday } from "./useHolidays";
 import type { Holiday } from "./holidayApi";
@@ -20,6 +21,7 @@ export default function HolidaysPage() {
   const createHoliday = useCreateHoliday();
   const deleteHoliday = useDeleteHoliday();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Holiday | null>(null);
   const { register, handleSubmit, reset } = useForm<{ name: string; date: string }>();
 
   const onSubmit = async (values: { name: string; date: string }) => {
@@ -83,7 +85,7 @@ export default function HolidaysPage() {
               ? [{
                   header: "Actions",
                   render: (h: Holiday) => (
-                    <Button size="sm" variant="destructive" onClick={() => deleteHoliday.mutate(h.id)}>
+                    <Button size="sm" variant="destructive" onClick={() => setToDelete(h)}>
                       Delete
                     </Button>
                   ),
@@ -92,6 +94,21 @@ export default function HolidaysPage() {
           ]}
         />
       )}
+      <ConfirmActionDialog
+        open={toDelete !== null}
+        title="Delete holiday?"
+        description={<>This will permanently delete <strong>{toDelete?.name}</strong> on {toDelete?.date}.</>}
+        confirmLabel="Delete holiday"
+        pending={deleteHoliday.isPending}
+        error={deleteHoliday.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteHoliday.isPending) setToDelete(null);
+        }}
+        onConfirm={() => {
+          if (!toDelete) return;
+          deleteHoliday.mutate(toDelete.id, { onSuccess: () => setToDelete(null) });
+        }}
+      />
     </div>
   );
 }

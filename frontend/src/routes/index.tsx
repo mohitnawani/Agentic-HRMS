@@ -75,7 +75,6 @@ export const router = createBrowserRouter([
           { path: "/admin/departments", element: <DepartmentPage /> },
           { path: "/admin/designations", element: <DesignationPage /> },
           { path: "/admin/holidays", element: <HolidaysPage /> },
-          { path: "/admin/leave", element: <LeavePage /> },
           { path: "/admin/approvals", element: <LeaveApprovalsPage /> },
           { path: "/admin/announcements", element: <AnnouncementsPage /> },
           { path: "/admin/users", element: <UsersPage /> },

@@ -6,15 +6,21 @@ from typing import Literal
 
 from langgraph.runtime import Runtime
 
+from app.agent.audit import audit_tool_result
 from app.agent.state import AgentRuntimeContext, AgentState, AgentToolResult
 from app.agent.tools.read_tools import (
     ReadToolAccessDenied,
     ReadToolNotFound,
+    get_announcements,
     get_attendance_summary,
+    get_audit_logs,
     get_employee_details,
+    get_holidays,
     get_leave_balance,
+    get_leave_history,
     get_policy_catalog,
     list_employees,
+    list_pending_leave_requests,
 )
 
 DatabaseToolName = Literal[
@@ -23,13 +29,32 @@ DatabaseToolName = Literal[
     "list_employees",
     "get_employee_details",
     "get_policy_catalog",
+    "get_audit_logs",
+    "get_leave_history",
+    "list_pending_leave_requests",
+    "get_holidays",
+    "get_announcements",
 ]
 
 
 def select_database_tool(message: str) -> DatabaseToolName | None:
     normalized = " ".join(message.lower().split())
+    if "audit" in normalized and any(
+        word in normalized for word in ("show", "view", "list", "log", "logs")
+    ):
+        return "get_audit_logs"
+    if "announcement" in normalized:
+        return "get_announcements"
+    if "holiday" in normalized:
+        return "get_holidays"
+    if "leave" in normalized and "pending" in normalized:
+        return "list_pending_leave_requests"
+    if "leave" in normalized and any(
+        word in normalized for word in ("history", "requests", "approved", "rejected")
+    ):
+        return "get_leave_history"
     if re.search(
-        r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ies)\b",
+        r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ie|ies)\b",
         normalized,
     ):
         return "get_policy_catalog"
@@ -65,7 +90,47 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             "message": "I could not identify the requested HR information.",
         }
 
-    if tool == "get_leave_balance":
+    if tool == "get_announcements":
+        records = await get_announcements(state, db)
+        data = {"announcements": records}
+        message = (
+            f"I found {len(records)} active announcement(s)."
+            if records
+            else "There are no active announcements."
+        )
+    elif tool == "get_holidays":
+        records = await get_holidays(state, db)
+        data = {"holidays": records}
+        message = (
+            f"I found {len(records)} holiday(s) this year."
+            if records
+            else "No holidays were found for this year."
+        )
+    elif tool == "list_pending_leave_requests":
+        records = await list_pending_leave_requests(state, db)
+        data = {"leave_requests": records}
+        message = (
+            f"There are {len(records)} pending leave request(s)."
+            if records
+            else "There are no pending leave requests."
+        )
+    elif tool == "get_leave_history":
+        records = await get_leave_history(state, db)
+        data = {"leave_requests": records}
+        message = (
+            f"I found {len(records)} leave request(s) in your history."
+            if records
+            else "You have no leave request history."
+        )
+    elif tool == "get_audit_logs":
+        records = await get_audit_logs(state, db)
+        data = {"audits": records}
+        message = (
+            f"I found {len(records)} recent agent audit records."
+            if records
+            else "No agent audit records were found."
+        )
+    elif tool == "get_leave_balance":
         data = await get_leave_balance(state, db)
         balances = data["balances"]
         details = "; ".join(
@@ -128,20 +193,24 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
 async def database_agent_node(
     state: AgentState, runtime: Runtime[AgentRuntimeContext]
 ) -> dict:
+    selected_tool = select_database_tool(state["message"])
     try:
         result = await run_database_query(state, runtime.context["db"])
     except ReadToolAccessDenied as exc:
         result = {
             "agent": "database",
             "status": "denied",
+            "tool": selected_tool or "unknown",
             "message": str(exc),
         }
     except (ReadToolNotFound, ValueError) as exc:
         result = {
             "agent": "database",
             "status": "error",
+            "tool": selected_tool or "unknown",
             "message": str(exc),
         }
+    await audit_tool_result(runtime.context["db"], state, result)
     return {
         "tool_results": [result],
         "route_trace": ["database_agent"],

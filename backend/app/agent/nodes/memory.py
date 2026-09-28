@@ -36,7 +36,7 @@ async def save_memory_node(
             "memory_user_message",
             state.get("original_message", state["message"]),
         ),
-        state["final_answer"],
+        state.get("memory_assistant_message", state["final_answer"]),
         state.get("pending_action"),
     )
     return {}

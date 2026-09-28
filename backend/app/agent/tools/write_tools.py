@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import AgentState
-from app.core.permissions import has_permission
+from app.core.permissions import PERMISSIONS, has_permission
 from app.models.announcement import Announcement
 from app.models.department import Department
 from app.models.employee import Employee
@@ -68,8 +68,11 @@ async def _actor_user(state: AgentState, db: AsyncSession) -> User:
 
 def _require(role: RoleEnum, permission: str) -> None:
     if not has_permission(role, permission):
+        allowed = PERMISSIONS.get(permission, set())
+        role_names = ", ".join(sorted(item.value.title() for item in allowed))
+        suffix = f" Only {role_names} can do this." if role_names else ""
         raise WriteToolAccessDenied(
-            f"Your role does not have permission '{permission}'."
+            f"Your role does not have permission to perform this action.{suffix}"
         )
 
 
@@ -179,6 +182,20 @@ async def apply_leave(
         "start_date": request.start_date.isoformat(),
         "end_date": request.end_date.isoformat(),
     }
+
+
+async def preview_leave_application(
+    state: AgentState, db: AsyncSession, data: LeaveRequestCreate
+) -> dict[str, object]:
+    """Run the same leave validation before asking the user to confirm."""
+    actor = await authorize_write_tool(state, db, "apply_leave")
+    employee = await db.scalar(select(Employee).where(Employee.user_id == actor.id))
+    if employee is None:
+        raise WriteToolConflict("No employee profile is linked to your account.")
+    try:
+        return await leave_service.validate_leave_request(db, employee.id, data)
+    except HTTPException as exc:
+        raise _translate_service_error(exc) from exc
 
 
 async def cancel_leave(

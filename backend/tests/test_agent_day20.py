@@ -225,11 +225,12 @@ async def test_scenario_3_hr_creates_employee_through_follow_up_flow(client):
         json={"message": "2026-10-01", "conversation_id": conversation_id},
         headers=auth(token),
     )
-    assert "temporary password" in third.json()["answer"].lower()
+    assert "temporary password will be generated" in third.json()["answer"].lower()
+    assert third.json()["tool_results"][-1]["status"] == "confirmation_required"
 
     completed = await client.post(
         "/api/v1/agent/chat",
-        json={"message": "TemporaryEmployee!42", "conversation_id": conversation_id},
+        json={"message": "confirm", "conversation_id": conversation_id},
         headers=auth(token),
     )
     assert completed.status_code == 200, completed.text

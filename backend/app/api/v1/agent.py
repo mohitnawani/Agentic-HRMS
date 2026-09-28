@@ -99,6 +99,14 @@ async def _invoke_agent(
             "action_payload": payload.parameters,
         },
         context={"db": db},
+        config={
+            "configurable": {
+                # User ownership is enforced when the conversation is loaded.
+                # Including both identifiers prevents memory/pending-state reuse
+                # across users even if a conversation id is ever guessed.
+                "thread_id": f"{current_user.id}:{conversation_id}",
+            }
+        },
     )
 
 

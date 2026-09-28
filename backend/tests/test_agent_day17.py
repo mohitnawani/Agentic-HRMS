@@ -173,6 +173,7 @@ async def test_rag_node_wraps_grounded_pipeline_with_citations(monkeypatch):
 
 def test_policy_count_and_list_prompts_select_catalog_tool():
     assert select_database_tool("How many policies are available?") == "get_policy_catalog"
+    assert select_database_tool("how many policie are ther") == "get_policy_catalog"
     assert select_database_tool("List all policy documents") == "get_policy_catalog"
     assert select_database_tool("Show available policies") == "get_policy_catalog"
 

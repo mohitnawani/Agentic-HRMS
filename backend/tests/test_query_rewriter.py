@@ -3,7 +3,10 @@ import uuid
 import pytest
 
 from app.agent.nodes import query_rewriter as rewriter_module
-from app.agent.nodes.query_rewriter import query_rewriter_node
+from app.agent.nodes.query_rewriter import (
+    correct_common_misspellings,
+    query_rewriter_node,
+)
 from app.models.role import RoleEnum
 
 
@@ -14,6 +17,13 @@ def state(message: str, **extra) -> dict:
         "message": message,
         **extra,
     }
+
+
+def test_policy_count_typoes_are_corrected_deterministically():
+    assert (
+        correct_common_misspellings("how many policie are ther")
+        == "how many policies are there"
+    )
 
 
 @pytest.mark.asyncio

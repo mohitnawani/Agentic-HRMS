@@ -16,14 +16,17 @@ ACTION_PATTERNS = (
     r"\b(check[ -]?in|check[ -]?out)\b",
 )
 DATABASE_PATTERNS = (
+    r"\b(show|view|list|get)\b.*\baudit\b",
+    r"\b(holiday|holidays|announcement|announcements)\b",
+    r"\b(leave history|leave requests|pending leave|leave approved|leave rejected)\b",
     r"\b(how many|remaining)\b.*\b(leave|leaves|days)\b",
-    r"\b(how many|number of|total|count|list|show|available)\b.*\b(policy|policies)\b",
+    r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ie|ies)\b",
     r"\b(leave balance|leave history|attendance|employee details)\b",
     r"\b(list|show|find|get)\b.*\b(employee|employees|department|attendance)\b",
     r"\b(my profile|my attendance|my leaves)\b",
 )
 RAG_PATTERNS = (
-    r"\b(policy|policies|handbook|guideline|guidelines|code of conduct)\b",
+    r"\b(polic(?:y|ie|ies)|handbook|guideline|guidelines|code of conduct)\b",
     r"\b(work[ -]?from[ -]?home|wfh|benefits|travel policy)\b",
 )
 
@@ -42,9 +45,13 @@ def classify_intent(message: str) -> AgentIntent:
 
 
 def supervisor_node(state: AgentState) -> dict:
-    intent: AgentIntent = (
-        "action" if state.get("pending_action") else classify_intent(state["message"])
-    )
+    classified = classify_intent(state["message"])
+    # Read-only questions may temporarily interrupt a write flow. The pending
+    # action remains persisted and is resumed after the informational answer.
+    if state.get("pending_action") and classified not in {"database", "rag"}:
+        intent: AgentIntent = "action"
+    else:
+        intent = classified
     return {
         "intent": intent,
         "route_trace": ["supervisor"],

@@ -29,8 +29,7 @@ export default function EmployeeListPage() {
 
   const canManage = role === "admin" || role === "hr";
   // Admin deletes anyone; HR deletes employees only (never admins/HRs); employee deletes no one.
-  const canDelete = (targetRole: string) =>
-    role === "admin" || (role === "hr" && targetRole === "employee");
+  const canDelete = (_targetRole: string) => role === "admin";
 
   if (isLoading) return <LoadingSkeleton rows={6} />;
   if (isError) return <p className="text-destructive">Failed to load employees.</p>;

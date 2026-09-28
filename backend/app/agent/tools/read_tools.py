@@ -2,17 +2,21 @@
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import AgentState
 from app.core.permissions import has_permission
+from app.models.agent_audit import AgentToolAudit
+from app.models.announcement import Announcement
 from app.models.department import Department
 from app.models.designation import Designation
 from app.models.document_chunk import DocumentChunk
 from app.models.employee import Employee
+from app.models.holiday import Holiday
+from app.models.leave import LeaveRequest, LeaveRequestStatus, LeaveType
 from app.models.policy_document import PolicyDocument
 from app.models.role import RoleEnum
 from app.models.user import User
@@ -286,3 +290,134 @@ async def get_employee_details(
         "department": department,
         "designation": designation,
     }
+
+
+async def get_audit_logs(
+    state: AgentState, db: AsyncSession, *, limit: int = 50
+) -> list[dict[str, object]]:
+    """Return recent secret-safe agent audit records to administrators."""
+    _, role = _actor(state)
+    _require(role, "audit:read")
+    records = list(
+        (
+            await db.scalars(
+                select(AgentToolAudit)
+                .order_by(AgentToolAudit.created_at.desc())
+                .limit(max(1, min(limit, 100)))
+            )
+        ).all()
+    )
+    return [
+        {
+            "audit_id": str(record.id),
+            "actor_user_id": (
+                str(record.actor_user_id) if record.actor_user_id else None
+            ),
+            "agent": record.agent,
+            "tool": record.tool,
+            "status": record.status,
+            "permission": record.permission,
+            "created_at": record.created_at.isoformat(),
+        }
+        for record in records
+    ]
+
+
+async def get_leave_history(
+    state: AgentState, db: AsyncSession
+) -> list[dict[str, object]]:
+    user_id, role = _actor(state)
+    _require(role, "leave:apply")
+    employee = await _employee_for_user(db, user_id)
+    rows = (
+        await db.execute(
+            select(LeaveRequest, LeaveType)
+            .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+            .where(LeaveRequest.employee_id == employee.id)
+            .order_by(LeaveRequest.created_at.desc())
+            .limit(50)
+        )
+    ).all()
+    return [
+        {
+            "request_id": str(request.id),
+            "leave_type": leave_type.name,
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "reason": request.reason,
+            "status": request.status.value,
+        }
+        for request, leave_type in rows
+    ]
+
+
+async def list_pending_leave_requests(
+    state: AgentState, db: AsyncSession
+) -> list[dict[str, object]]:
+    _, role = _actor(state)
+    _require(role, "leave:read_all")
+    rows = (
+        await db.execute(
+            select(LeaveRequest, LeaveType, Employee)
+            .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+            .join(Employee, Employee.id == LeaveRequest.employee_id)
+            .where(LeaveRequest.status == LeaveRequestStatus.PENDING)
+            .order_by(LeaveRequest.created_at)
+        )
+    ).all()
+    return [
+        {
+            "request_id": str(request.id),
+            "employee_id": str(employee.id),
+            "employee": f"{employee.first_name} {employee.last_name}",
+            "leave_type": leave_type.name,
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "reason": request.reason,
+        }
+        for request, leave_type, employee in rows
+    ]
+
+
+async def get_holidays(
+    state: AgentState, db: AsyncSession, *, year: int | None = None
+) -> list[dict[str, object]]:
+    _, role = _actor(state)
+    _require(role, "holiday:read")
+    selected_year = year or datetime.now(UTC).year
+    rows = list(
+        (
+            await db.scalars(
+                select(Holiday)
+                .where(
+                    Holiday.date >= date(selected_year, 1, 1),
+                    Holiday.date < date(selected_year + 1, 1, 1),
+                )
+                .order_by(Holiday.date)
+            )
+        ).all()
+    )
+    return [
+        {"holiday_id": str(item.id), "name": item.name, "date": item.date.isoformat()}
+        for item in rows
+    ]
+
+
+async def get_announcements(
+    state: AgentState, db: AsyncSession
+) -> list[dict[str, object]]:
+    _, role = _actor(state)
+    _require(role, "announcement:read")
+    statement = select(Announcement).where(Announcement.is_active.is_(True))
+    rows = list(
+        (await db.scalars(statement.order_by(Announcement.created_at.desc()).limit(20))).all()
+    )
+    return [
+        {
+            "announcement_id": str(item.id),
+            "title": item.title,
+            "body": item.body,
+            "created_at": item.created_at.isoformat(),
+        }
+        for item in rows
+    ]

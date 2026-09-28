@@ -50,7 +50,7 @@ export interface AgentConversationMessage {
 
 export interface AgentPendingInteraction {
   tool: string;
-  stage: "slots" | "confirmation";
+  stage: "slots" | "confirmation" | "switch_confirmation";
   missing_field: string | null;
   parameters?: Record<string, unknown>;
 }

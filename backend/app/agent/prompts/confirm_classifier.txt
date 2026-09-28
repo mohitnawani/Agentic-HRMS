@@ -1,0 +1,11 @@
+The server is waiting for confirmation of this action:
+{confirmation_summary}
+
+User reply: {message}
+
+Return JSON only:
+{"decision":"YES|NO|EDIT|UNSURE","edit":null}
+
+YES requires clear unconditional approval. NO is refusal or cancellation.
+EDIT contains only explicitly changed values. Conditional, hesitant, unrelated,
+or unclear replies are UNSURE. Never infer approval.

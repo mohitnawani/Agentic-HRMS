@@ -4,6 +4,7 @@ import re
 
 from langgraph.runtime import Runtime
 
+from app.agent.audit import audit_tool_result
 from app.agent.state import AgentRuntimeContext, AgentState
 from app.agent.tools.read_tools import get_policy_catalog, get_policy_summaries
 from app.core.permissions import has_permission
@@ -163,6 +164,7 @@ async def rag_agent_node(
             },
             "retrieved_context": [],
         }
+    await audit_tool_result(runtime.context["db"], state, result["tool_result"])
     return {
         "tool_results": [result["tool_result"]],
         "retrieved_context": result["retrieved_context"],

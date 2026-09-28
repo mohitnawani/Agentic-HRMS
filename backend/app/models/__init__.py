@@ -1,3 +1,4 @@
+from app.models.agent_audit import AgentToolAudit
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.announcement import Announcement
 from app.models.attendance import Attendance, AttendanceStatus
@@ -19,6 +20,7 @@ from app.models.user import User
 __all__ = [
     "AgentConversation",
     "AgentMessage",
+    "AgentToolAudit",
     "Announcement",
     "Attendance",
     "AttendanceStatus",

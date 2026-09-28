@@ -61,7 +61,7 @@ class AgentConversationMessage(BaseModel):
 
 class AgentPendingInteraction(BaseModel):
     tool: str
-    stage: Literal["slots", "confirmation"]
+    stage: Literal["slots", "confirmation", "switch_confirmation"]
     missing_field: str | None = None
     parameters: dict[str, object] = Field(default_factory=dict)
 

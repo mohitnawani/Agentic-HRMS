@@ -169,16 +169,17 @@ async def test_create_employee_collects_missing_fields_across_messages(
         json={"message": "2026-10-01", "conversation_id": str(conversation_id)},
         headers=auth(admin_token),
     )
-    assert "temporary password" in third.json()["answer"].lower()
+    assert "temporary password will be generated" in third.json()["answer"].lower()
+    assert third.json()["tool_results"][-1]["status"] == "confirmation_required"
 
-    password = "TemporaryPass!42"
     completed = await client.post(
         "/api/v1/agent/chat",
-        json={"message": password, "conversation_id": str(conversation_id)},
+        json={"message": "confirm", "conversation_id": str(conversation_id)},
         headers=auth(admin_token),
     )
     assert completed.status_code == 200, completed.text
     assert "created employee priya singh" in completed.json()["answer"].lower()
+    password = completed.json()["answer"].split("Temporary password: ", 1)[1].split(".", 1)[0]
 
     async with async_session() as db:
         created_user = await db.scalar(select(User).where(User.email == email))
@@ -197,7 +198,8 @@ async def test_create_employee_collects_missing_fields_across_messages(
             ).all()
         )
         assert password not in {message.content for message in stored_messages}
-        assert "[Sensitive value provided]" in {
+        assert any("shown once" in message.content for message in stored_messages)
+        assert "confirm" in {
             message.content for message in stored_messages
         }
 

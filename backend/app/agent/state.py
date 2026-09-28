@@ -61,6 +61,7 @@ class AgentState(TypedDict, total=False):
     conversation_summary: str
     pending_action: dict[str, object] | None
     memory_user_message: str
+    memory_assistant_message: str
     action_payload: dict[str, object]
 
     intent: AgentIntent

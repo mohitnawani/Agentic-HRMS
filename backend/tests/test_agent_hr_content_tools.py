@@ -24,6 +24,8 @@ def auth(token: str) -> dict[str, str]:
         ("edit user", "update_employee"),
         ("update employee", "update_employee"),
         ("delete user", "delete_employee"),
+        ("i want to remove manjeet", "delete_employee"),
+        ("delete Rahul Kumar", "delete_employee"),
         ("Apply for leave", "apply_leave"),
         ("cancel leave", "cancel_leave"),
         ("check in", "check_in"),

@@ -38,6 +38,11 @@ const TOOL_LABELS: Record<string, string> = {
   list_employees: "Employee search",
   get_employee_details: "Employee details",
   get_policy_catalog: "Policy catalog",
+  get_audit_logs: "Agent audit logs",
+  get_leave_history: "Leave history",
+  list_pending_leave_requests: "Pending leave requests",
+  get_holidays: "Holidays",
+  get_announcements: "Announcements",
   policy_rag: "Policy search",
   policy_summary: "Policy summary",
   create_employee: "Create employee",
@@ -746,6 +751,14 @@ export default function ToolResultCard({
   const policySummaries = isRecord(data) && Array.isArray(data.summaries)
     ? data.summaries
     : [];
+  const auditRecords = isRecord(data) && Array.isArray(data.audits) ? data.audits : [];
+  const leaveRequests = isRecord(data) && Array.isArray(data.leave_requests)
+    ? data.leave_requests
+    : [];
+  const holidays = isRecord(data) && Array.isArray(data.holidays) ? data.holidays : [];
+  const announcements = isRecord(data) && Array.isArray(data.announcements)
+    ? data.announcements
+    : [];
   const details = isRecord(data)
     ? Object.entries(data).filter(
         ([key, item]) =>
@@ -965,7 +978,85 @@ export default function ToolResultCard({
         </div>
       )}
 
-      {!balances.length && !employees.length && !policies.length && !policySummaries.length && details.length > 0 && (
+      {auditRecords.length > 0 && (
+        <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+          {auditRecords.map((item, index) => {
+            const audit = isRecord(item) ? item : {};
+            return (
+              <div key={String(audit.audit_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-primary">{String(audit.tool ?? "Agent tool")}</p>
+                  <Badge variant={audit.status === "success" ? "success" : audit.status === "denied" ? "destructive" : "warning"}>
+                    {String(audit.status ?? "unknown")}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-muted-foreground">
+                  {String(audit.agent ?? "agent")} · {String(audit.created_at ?? "")}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {leaveRequests.length > 0 && (
+        <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+          {leaveRequests.map((item, index) => {
+            const request = isRecord(item) ? item : {};
+            return (
+              <div key={String(request.request_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-primary">
+                    {String(request.employee ?? request.leave_type ?? "Leave request")}
+                  </p>
+                  {Boolean(request.status) && (
+                    <Badge variant={request.status === "approved" ? "success" : request.status === "rejected" ? "destructive" : "warning"}>
+                      {String(request.status)}
+                    </Badge>
+                  )}
+                </div>
+                {Boolean(request.employee) && (
+                  <p className="mt-1 text-muted-foreground">{String(request.leave_type ?? "Leave")}</p>
+                )}
+                <p className="mt-1 text-muted-foreground">
+                  {String(request.start_date ?? "")} to {String(request.end_date ?? "")}
+                </p>
+                {Boolean(request.reason) && <p className="mt-1">{String(request.reason)}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {holidays.length > 0 && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {holidays.map((item, index) => {
+            const holiday = isRecord(item) ? item : {};
+            return (
+              <div key={String(holiday.holiday_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <p className="font-medium text-primary">{String(holiday.name ?? "Holiday")}</p>
+                <p className="mt-1 text-muted-foreground">{String(holiday.date ?? "")}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {announcements.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {announcements.map((item, index) => {
+            const announcement = isRecord(item) ? item : {};
+            return (
+              <div key={String(announcement.announcement_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <p className="font-medium text-primary">{String(announcement.title ?? "Announcement")}</p>
+                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{String(announcement.body ?? "")}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!balances.length && !employees.length && !policies.length && !policySummaries.length && !auditRecords.length && !leaveRequests.length && !holidays.length && !announcements.length && details.length > 0 && (
         <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           {details.slice(0, 8).map(([key, item]) => (
             <div key={key} className="flex justify-between gap-2 border-b border-border/60 py-1">

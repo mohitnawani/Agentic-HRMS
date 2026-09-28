@@ -5,9 +5,9 @@ PERMISSIONS: dict[str, set[RoleEnum]] = {
     #employess
     "employee:create": {RoleEnum.ADMIN, RoleEnum.HR},
     "employee:read_all": {RoleEnum.ADMIN, RoleEnum.HR},
-    "employee:read_self": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "employee:read_self": {RoleEnum.HR, RoleEnum.EMPLOYEE},
     "employee:update": {RoleEnum.ADMIN, RoleEnum.HR},
-    "employee:delete": {RoleEnum.ADMIN, RoleEnum.HR},
+    "employee:delete": {RoleEnum.ADMIN},
 
     #departments and designations
     "department:write": {RoleEnum.ADMIN},
@@ -17,14 +17,14 @@ PERMISSIONS: dict[str, set[RoleEnum]] = {
 
 
     #attendance
-    "attendance:check_in_out": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "attendance:check_in_out": {RoleEnum.HR, RoleEnum.EMPLOYEE},
     "attendance:read_all": {RoleEnum.ADMIN, RoleEnum.HR},
     "attendance:correct": {RoleEnum.ADMIN, RoleEnum.HR},
 
 
 
     #leaves
-    "leave:apply": {RoleEnum.ADMIN, RoleEnum.HR, RoleEnum.EMPLOYEE},
+    "leave:apply": {RoleEnum.HR, RoleEnum.EMPLOYEE},
     "leave:approve": {RoleEnum.ADMIN, RoleEnum.HR},
     "leave:policy_write": {RoleEnum.ADMIN},
     "leave:read_all": {RoleEnum.ADMIN, RoleEnum.HR},

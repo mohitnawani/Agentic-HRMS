@@ -11,6 +11,7 @@ from app.agent.state import AgentState
 from app.core.permissions import has_permission
 from app.models.agent_audit import AgentToolAudit
 from app.models.announcement import Announcement
+from app.models.attendance import Attendance
 from app.models.department import Department
 from app.models.designation import Designation
 from app.models.document_chunk import DocumentChunk
@@ -101,6 +102,47 @@ async def get_attendance_summary(
         "month": selected_month,
         **summary,
     }
+
+
+async def list_attendance_records(
+    state: AgentState,
+    db: AsyncSession,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> list[dict[str, object]]:
+    """Return recent organization attendance for an authenticated HR/Admin."""
+    _, role = _actor(state)
+    _require(role, "attendance:read_all")
+    today = datetime.now(UTC).date()
+    selected_start = start or today.replace(day=1)
+    selected_end = end or today
+    if selected_end < selected_start:
+        raise ValueError("end date cannot be before start date")
+    rows = (
+        await db.execute(
+            select(Attendance, Employee)
+            .join(Employee, Employee.id == Attendance.employee_id)
+            .where(
+                Attendance.date >= selected_start,
+                Attendance.date <= selected_end,
+            )
+            .order_by(Attendance.date.desc(), Employee.first_name, Employee.last_name)
+            .limit(200)
+        )
+    ).all()
+    return [
+        {
+            "attendance_id": str(record.id),
+            "employee_id": str(employee.id),
+            "employee": f"{employee.first_name} {employee.last_name}",
+            "date": record.date.isoformat(),
+            "status": record.status.value,
+            "check_in": record.check_in.isoformat() if record.check_in else None,
+            "check_out": record.check_out.isoformat() if record.check_out else None,
+        }
+        for record, employee in rows
+    ]
 
 
 async def list_employees(
@@ -424,30 +466,44 @@ async def get_leave_history(
 
 
 async def list_pending_leave_requests(
-    state: AgentState, db: AsyncSession
+    state: AgentState,
+    db: AsyncSession,
+    *,
+    requester_role: RoleEnum | None = None,
 ) -> list[dict[str, object]]:
     _, role = _actor(state)
     _require(role, "leave:read_all")
-    rows = (
-        await db.execute(
-            select(LeaveRequest, LeaveType, Employee)
-            .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
-            .join(Employee, Employee.id == LeaveRequest.employee_id)
-            .where(LeaveRequest.status == LeaveRequestStatus.PENDING)
-            .order_by(LeaveRequest.created_at)
+    allowed_requester_roles = (
+        {RoleEnum.EMPLOYEE}
+        if role == RoleEnum.HR
+        else {RoleEnum.EMPLOYEE, RoleEnum.HR}
+    )
+    if requester_role is not None:
+        allowed_requester_roles &= {requester_role}
+    statement = (
+        select(LeaveRequest, LeaveType, Employee, User.role)
+        .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+        .join(Employee, Employee.id == LeaveRequest.employee_id)
+        .join(User, User.id == Employee.user_id)
+        .where(
+            LeaveRequest.status == LeaveRequestStatus.PENDING,
+            User.role.in_(allowed_requester_roles),
         )
-    ).all()
+        .order_by(LeaveRequest.created_at)
+    )
+    rows = (await db.execute(statement)).all()
     return [
         {
             "request_id": str(request.id),
             "employee_id": str(employee.id),
             "employee": f"{employee.first_name} {employee.last_name}",
+            "employee_role": requester_role_value.value,
             "leave_type": leave_type.name,
             "start_date": request.start_date.isoformat(),
             "end_date": request.end_date.isoformat(),
             "reason": request.reason,
         }
-        for request, leave_type, employee in rows
+        for request, leave_type, employee, requester_role_value in rows
     ]
 
 

@@ -167,10 +167,20 @@ async def get_my_requests(db: AsyncSession, employee_id: uuid.UUID) -> list[Leav
     return list(result.scalars().all())
 
 
-async def get_pending_requests(db: AsyncSession) -> list[LeaveRequest]:
-    result = await db.execute(
-        select(LeaveRequest).where(LeaveRequest.status == LeaveRequestStatus.PENDING)
+async def get_pending_requests(
+    db: AsyncSession, reviewer_role: RoleEnum | None = None
+) -> list[LeaveRequest]:
+    query = (
+        select(LeaveRequest)
+        .join(Employee, Employee.id == LeaveRequest.employee_id)
+        .join(User, User.id == Employee.user_id)
+        .where(LeaveRequest.status == LeaveRequestStatus.PENDING)
     )
+    if reviewer_role == RoleEnum.HR:
+        query = query.where(User.role == RoleEnum.EMPLOYEE)
+    elif reviewer_role == RoleEnum.ADMIN:
+        query = query.where(User.role.in_((RoleEnum.EMPLOYEE, RoleEnum.HR)))
+    result = await db.execute(query.order_by(LeaveRequest.created_at))
     return list(result.scalars().all())
 
 

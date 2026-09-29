@@ -91,7 +91,7 @@ async def test_employee_can_start_leave_application(client, employee_token):
 
 
 @pytest.mark.asyncio
-async def test_failed_leave_confirmation_does_not_trap_next_application(
+async def test_failed_leave_preflight_does_not_trap_next_application(
     client, employee_token
 ):
     first = await client.post(
@@ -116,20 +116,13 @@ async def test_failed_leave_confirmation_does_not_trap_next_application(
         },
         headers=auth(employee_token),
     )
-    assert "confirm" in review.json()["answer"].lower()
-
-    failed = await client.post(
-        "/api/v1/agent/chat",
-        json={"message": "confirm", "conversation_id": conversation_id},
-        headers=auth(employee_token),
-    )
-    assert "leave type not found" in failed.json()["answer"].lower()
+    assert "leave type not found" in review.json()["answer"].lower()
 
     restored = await client.get(
         f"/api/v1/agent/conversations/{conversation_id}",
         headers=auth(employee_token),
     )
-    assert restored.json()["pending_interaction"] is None
+    assert restored.json()["pending_interaction"]["missing_field"] == "leave_type_id"
 
     restarted = await client.post(
         "/api/v1/agent/chat",

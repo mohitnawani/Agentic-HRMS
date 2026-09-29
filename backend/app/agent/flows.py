@@ -10,6 +10,7 @@ from typing import Literal
 WorkflowIntent = Literal[
     "CREATE_EMPLOYEE",
     "UPDATE_EMPLOYEE",
+    "UPLOAD_EMPLOYEE_PHOTO",
     "DELETE_EMPLOYEE",
     "APPROVE_LEAVE",
     "REJECT_LEAVE",
@@ -49,7 +50,15 @@ WORKFLOWS: dict[WorkflowIntent, WorkflowSpec] = {
         ("first_name", "last_name", "email", "date_of_joining", "role"),
     ),
     "UPDATE_EMPLOYEE": WorkflowSpec(
-        "update_employee", "employee:update", ("employee_id", "updates")
+        "update_employee",
+        "employee:update",
+        ("employee_id", "update_field", "update_value"),
+    ),
+    "UPLOAD_EMPLOYEE_PHOTO": WorkflowSpec(
+        "upload_employee_photo",
+        "employee:update",
+        ("employee_id", "photo_file"),
+        "none",
     ),
     "DELETE_EMPLOYEE": WorkflowSpec(
         "delete_employee", "employee:delete", ("employee_id",), "strong"
@@ -140,6 +149,11 @@ def missing_slots(tool: str, collected: dict[str, object]) -> list[str]:
     spec = TOOL_WORKFLOWS[tool]
     if tool == "delete_employee" and collected.get("bulk"):
         return []
+    # API/tests may still provide a pre-built update mapping. Interactive chat
+    # uses update_field -> update_value so only one employee field is collected
+    # at a time, but both paths converge on the same confirmed write tool.
+    if tool == "update_employee" and collected.get("updates"):
+        return [] if collected.get("employee_id") else ["employee_id"]
     return [
         slot
         for slot in spec.required_slots

@@ -44,6 +44,7 @@ class WriteToolConflict(ValueError):
 ACTION_PERMISSIONS = {
     "create_employee": "employee:create",
     "update_employee": "employee:update",
+    "upload_employee_photo": "employee:update",
     "delete_employee": "employee:delete",
     "approve_leave": "leave:approve",
     "reject_leave": "leave:approve",

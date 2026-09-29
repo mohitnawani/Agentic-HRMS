@@ -54,6 +54,79 @@ def state_for(user: User, message: str, **parameters: object) -> AgentState:
 
 
 @pytest.mark.asyncio
+async def test_hr_edits_one_employee_field_through_guided_confirmation():
+    """The chat must collect one field/value and write only after confirmation."""
+    async with async_session() as db:
+        hr, _ = await create_actor(db, RoleEnum.HR, "guided_edit_hr")
+        _, target = await create_actor(db, RoleEnum.EMPLOYEE, "guided_edit_target")
+        target.city = "Delhi"
+        await db.commit()
+
+        first, pending, _ = await handle_action(
+            state_for(hr, f"Edit employee {target.id}"), db
+        )
+        assert first["status"] == "needs_input"
+        assert first["data"]["missing_field"] == "update_field"
+        assert any(
+            option["value"] == "city" for option in first["data"]["suggestions"]
+        )
+
+        field_state = state_for(hr, "City", update_field="city")
+        field_state["pending_action"] = pending
+        second, pending, _ = await handle_action(field_state, db)
+        assert second["status"] == "needs_input"
+        assert second["data"]["missing_field"] == "update_value"
+        assert second["data"]["current_value"] == "Delhi"
+
+        value_state = state_for(hr, "Pune", update_value="Pune")
+        value_state["pending_action"] = pending
+        third, pending, _ = await handle_action(value_state, db)
+        assert third["status"] == "confirmation_required"
+        assert "City: Delhi -> Pune" in third["message"]
+        assert (await db.get(Employee, target.id)).city == "Delhi"
+
+        confirm_state = state_for(hr, "confirm")
+        confirm_state["pending_action"] = pending
+        completed, pending, _ = await handle_action(confirm_state, db)
+        assert completed["status"] == "success"
+        assert pending is None
+        assert (await db.get(Employee, target.id)).city == "Pune"
+
+
+@pytest.mark.asyncio
+async def test_hr_employee_photo_flow_selects_target_then_verifies_upload():
+    async with async_session() as db:
+        hr, _ = await create_actor(db, RoleEnum.HR, "photo_flow_hr")
+        _, target = await create_actor(db, RoleEnum.EMPLOYEE, "photo_flow_target")
+        await db.commit()
+
+        first, pending, _ = await handle_action(
+            state_for(hr, "Change employee photo"), db
+        )
+        assert first["status"] == "needs_input"
+        assert first["tool"] == "upload_employee_photo"
+        assert first["data"]["missing_field"] == "employee_id"
+
+        selected = state_for(hr, str(target.id), employee_id=str(target.id))
+        selected["pending_action"] = pending
+        second, pending, _ = await handle_action(selected, db)
+        assert second["status"] == "needs_input"
+        assert second["data"]["missing_field"] == "photo_file"
+        assert second["data"]["parameters"]["employee_id"] == str(target.id)
+
+        # The authenticated photo endpoint performs and validates the binary
+        # upload; the action flow then verifies the resulting persisted URL.
+        target.photo_url = "https://res.cloudinary.com/test/image/upload/photo.png"
+        await db.commit()
+        uploaded = state_for(hr, "Employee photo upload completed", photo_file="uploaded")
+        uploaded["pending_action"] = pending
+        completed, pending, _ = await handle_action(uploaded, db)
+        assert completed["status"] == "success"
+        assert completed["data"]["photo_url"] == target.photo_url
+        assert pending is None
+
+
+@pytest.mark.asyncio
 async def test_employee_delete_is_denied_without_database_write():
     async with async_session() as db:
         actor, _ = await create_actor(db, RoleEnum.EMPLOYEE, "denied_actor")

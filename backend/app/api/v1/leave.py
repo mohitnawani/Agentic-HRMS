@@ -1,5 +1,6 @@
+# ruff: noqa: B008
 import uuid
-from datetime import date
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +9,11 @@ from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.leave import (
-    LeaveBalanceRead, LeaveRequestCreate, LeaveRequestRead, LeaveTypeCreate, LeaveTypeRead,
+    LeaveBalanceRead,
+    LeaveRequestCreate,
+    LeaveRequestRead,
+    LeaveTypeCreate,
+    LeaveTypeRead,
 )
 from app.services import employee_service, leave_service
 
@@ -27,7 +32,9 @@ async def list_leave_types(db: AsyncSession = Depends(get_db)):
 
 @router.get("/balance", response_model=list[LeaveBalanceRead], dependencies=[Depends(require_permission("leave:apply"))])
 async def my_balance(
-    year: int = Query(default_factory=lambda: date.today().year, ge=2000, le=2100),
+    year: int = Query(
+        default_factory=lambda: datetime.now(UTC).year, ge=2000, le=2100
+    ),
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     employee = await employee_service.get_employee_by_user_id(db, current_user.id)
@@ -49,8 +56,11 @@ async def my_requests(current_user: User = Depends(get_current_user), db: AsyncS
 
 
 @router.get("/requests/pending", response_model=list[LeaveRequestRead], dependencies=[Depends(require_permission("leave:read_all"))])
-async def pending_requests(db: AsyncSession = Depends(get_db)):
-    return await leave_service.get_pending_requests(db)
+async def pending_requests(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await leave_service.get_pending_requests(db, current_user.role)
 
 
 @router.post("/requests/{request_id}/approve", response_model=LeaveRequestRead, dependencies=[Depends(require_permission("leave:approve"))])

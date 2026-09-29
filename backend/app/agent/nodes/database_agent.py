@@ -20,6 +20,7 @@ from app.agent.tools.read_tools import (
     get_leave_history,
     get_org_stats,
     get_policy_catalog,
+    list_attendance_records,
     list_departments,
     list_designations,
     list_employees,
@@ -31,6 +32,7 @@ from app.models.role import RoleEnum
 DatabaseToolName = Literal[
     "get_leave_balance",
     "get_attendance_summary",
+    "list_attendance_records",
     "list_employees",
     "get_employee_details",
     "get_policy_catalog",
@@ -135,6 +137,8 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
         return "get_holidays"
     if "leave" in normalized and "pending" in normalized:
         return "list_pending_leave_requests"
+    if re.search(r"\b(leave approvals?|approval leaves?|employee leaves?|hr leaves?)\b", normalized):
+        return "list_pending_leave_requests"
     if "leave" in normalized and any(word in normalized for word in ("manage", "review")):
         return "list_pending_leave_requests"
     if "leave" in normalized and any(
@@ -146,8 +150,10 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
         normalized,
     ):
         return "get_policy_catalog"
-    if "attendance" in normalized:
+    if "attendance" in normalized and re.search(r"\b(my|mine|own)\b", normalized):
         return "get_attendance_summary"
+    if "attendance" in normalized:
+        return "list_attendance_records"
     if "leave" in normalized and any(
         word in normalized for word in ("balance", "remaining", "how many", "left")
     ):
@@ -306,7 +312,17 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             else "No holidays were found for this year."
         )
     elif tool == "list_pending_leave_requests":
-        records = await list_pending_leave_requests(state, db)
+        normalized = " ".join(state["message"].lower().split())
+        requester_role = (
+            RoleEnum.HR
+            if re.search(r"\bhr\s+(?:pending\s+)?leaves?\b", normalized)
+            else RoleEnum.EMPLOYEE
+            if re.search(r"\bemployees?\s+(?:pending\s+)?leaves?\b", normalized)
+            else None
+        )
+        records = await list_pending_leave_requests(
+            state, db, requester_role=requester_role
+        )
         data = {"leave_requests": records}
         message = (
             f"There are {len(records)} pending leave request(s)."
@@ -348,6 +364,14 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             f"Your attendance summary for {data['year']}-{data['month']:02d}: "
             f"{data['present']} present, {data['late']} late, "
             f"{data['half_day']} half-day, and {data['absent']} absent."
+        )
+    elif tool == "list_attendance_records":
+        records = await list_attendance_records(state, db)
+        data = {"attendance_records": records}
+        message = (
+            f"I found {len(records)} attendance record(s) for the current month."
+            if records
+            else "No employee attendance records were found for the current month."
         )
     elif tool == "list_employees":
         data = await list_employees(state, db)

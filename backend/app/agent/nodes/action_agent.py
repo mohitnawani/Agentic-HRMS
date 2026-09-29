@@ -65,6 +65,7 @@ from app.schemas.leave import LeaveRequestCreate, LeaveTypeCreate
 ActionToolName = Literal[
     "create_employee",
     "update_employee",
+    "upload_employee_photo",
     "delete_employee",
     "approve_leave",
     "reject_leave",
@@ -133,7 +134,9 @@ FIELD_PROMPTS = {
     "role": "Which account role should this employee have?",
     "employee_id": "What is the employee ID?",
     "request_id": "What is the leave request ID?",
-    "updates": "Which employee fields should be updated?",
+    "update_field": "Which employee field would you like to change?",
+    "update_value": "What should the new value be?",
+    "photo_file": "Choose the employee photo to upload.",
     "name": "What name should be used?",
     "department_id": "Which department should be used?",
     "designation_id": "Which designation should be deleted?",
@@ -182,12 +185,36 @@ LEAVE_TYPE_PRESENTATION = {
     ),
 }
 
+EMPLOYEE_UPDATE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("role", "Account role"),
+    ("first_name", "First name"),
+    ("last_name", "Last name"),
+    ("phone", "Phone"),
+    ("employee_code", "Employee code"),
+    ("date_of_joining", "Joining date"),
+    ("date_of_birth", "Date of birth"),
+    ("gender", "Gender"),
+    ("department_id", "Department"),
+    ("designation_id", "Designation"),
+    ("city", "City"),
+    ("address", "Address"),
+    ("emergency_contact", "Emergency contact"),
+    ("bank_name", "Bank name"),
+    ("account_number", "Account number"),
+    ("ifsc_code", "IFSC code"),
+    ("id_proof_type", "ID proof type"),
+    ("id_proof_number", "ID proof number"),
+)
+EMPLOYEE_UPDATE_FIELD_NAMES = {name for name, _ in EMPLOYEE_UPDATE_FIELDS}
+EMPLOYEE_UPDATE_FIELD_LABELS = dict(EMPLOYEE_UPDATE_FIELDS)
+
 
 async def _slot_suggestions(
     tool: str,
     missing: str,
     state: AgentState,
     db,
+    payload: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, str]], str | None]:
     """Clickable options for the field being collected.
 
@@ -198,6 +225,34 @@ async def _slot_suggestions(
     if missing == "employee_id":
         rows = list((await db.scalars(select(Employee).order_by(Employee.first_name, Employee.last_name).limit(30))).all())
         return [{"label": f"{row.first_name} {row.last_name}", "value": str(row.id)} for row in rows], None
+    payload = payload or {}
+    if missing == "update_field" and tool == "update_employee":
+        return [
+            {"label": label, "value": name}
+            for name, label in EMPLOYEE_UPDATE_FIELDS
+        ], "Which single employee field would you like to change?"
+    if missing == "update_value" and tool == "update_employee":
+        field = str(payload.get("update_field", ""))
+        if field == "role":
+            return [
+                {"label": "Employee", "value": "employee"},
+                {"label": "HR", "value": "hr"},
+            ], None
+        if field == "department_id":
+            rows = list(
+                (await db.scalars(select(Department).order_by(Department.name))).all()
+            )
+            return [{"label": row.name, "value": str(row.id)} for row in rows], None
+        if field == "designation_id":
+            rows = list(
+                (await db.scalars(select(Designation).order_by(Designation.title))).all()
+            )
+            return [{"label": row.title, "value": str(row.id)} for row in rows], None
+        if field == "gender":
+            return [
+                {"label": value, "value": value}
+                for value in ("Female", "Male", "Non-binary", "Prefer not to say")
+            ], None
     if missing == "department_id":
         rows = list((await db.scalars(select(Department).order_by(Department.name))).all())
         return [{"label": row.name, "value": str(row.id)} for row in rows], None
@@ -246,14 +301,6 @@ async def _slot_suggestions(
         return options, None
     if missing == "status":
         return [{"label": value.replace("_", " ").title(), "value": value} for value in ("present", "absent", "late", "half_day")], None
-    if missing == "field":
-        fields_by_tool = {
-            "update_employee": ("first_name", "last_name", "phone", "date_of_joining", "department_id", "designation_id", "city", "address"),
-            "update_department": ("name", "description"),
-            "update_designation": ("title", "department_id"),
-            "update_holiday": ("name", "date"),
-        }
-        return [{"label": value.replace("_", " ").title(), "value": value} for value in fields_by_tool.get(tool, ())], None
     if tool == "apply_leave" and missing == "leave_type_id":
         leave_types = list((await db.scalars(select(LeaveType).order_by(LeaveType.name))).all())
         options = ", ".join(item.name for item in leave_types)
@@ -291,6 +338,10 @@ async def _slot_suggestions(
 def select_action_tool(message: str) -> ActionToolName | None:
     normalized = " ".join(message.lower().split())
     patterns: tuple[tuple[str, ActionToolName], ...] = (
+        (
+            r"\b(upload|change|update|replace)\b.*\b(employees?|users?)?\s*photo\b",
+            "upload_employee_photo",
+        ),
         (r"\b(create|add)\b.*\b(employees?|users?)\b", "create_employee"),
         (r"\b(update|change|edit)\b.*\b(employees?|users?)\b", "update_employee"),
         (r"\b(delete|remove)\b.*\b(employees?|users?)\b", "delete_employee"),
@@ -376,7 +427,12 @@ def _extract_initial_payload(
     if supplied_employee and not payload.get("employee_id"):
         payload["employee_name"] = str(supplied_employee).strip()
     uuid_match = UUID_PATTERN.search(message)
-    if uuid_match and tool in {"update_employee", "delete_employee", "correct_attendance"}:
+    if uuid_match and tool in {
+        "update_employee",
+        "upload_employee_photo",
+        "delete_employee",
+        "correct_attendance",
+    }:
         payload.setdefault("employee_id", uuid_match.group())
     if uuid_match and tool in {"approve_leave", "reject_leave", "cancel_leave"}:
         payload.setdefault("request_id", uuid_match.group())
@@ -393,15 +449,28 @@ def _extract_initial_payload(
     if uuid_match and tool in id_fields:
         payload.setdefault(id_fields[tool], uuid_match.group())
 
-    if tool in {"update_employee", "delete_employee", "correct_attendance"} and not payload.get(
+    if tool in {
+        "update_employee",
+        "upload_employee_photo",
+        "delete_employee",
+        "correct_attendance",
+    } and not payload.get(
         "employee_id"
     ):
-        name_match = re.search(
-            r"\b(?:update|change|edit|delete|remove|correct|fix)\b\s+(?:the\s+)?"
-            r"(?:employee|user)\s+([A-Za-z][A-Za-z' -]{0,199})$",
-            message,
-            flags=re.IGNORECASE,
-        )
+        if tool == "upload_employee_photo":
+            name_match = re.search(
+                r"\b(?:upload|change|update|replace)\b\s+(?:the\s+)?"
+                r"(?:employee|user)\s+([A-Za-z][A-Za-z' -]{0,199}?)\s+photo$",
+                message,
+                flags=re.IGNORECASE,
+            )
+        else:
+            name_match = re.search(
+                r"\b(?:update|change|edit|delete|remove|correct|fix)\b\s+(?:the\s+)?"
+                r"(?:employee|user)\s+([A-Za-z][A-Za-z' -]{0,199})$",
+                message,
+                flags=re.IGNORECASE,
+            )
         if name_match:
             payload.setdefault("employee_name", name_match.group(1).strip())
         else:
@@ -529,6 +598,78 @@ async def _resolve_employee_name(
     return "I found multiple employees with that name. Select the correct employee."
 
 
+async def _prepare_employee_edit(
+    payload: dict[str, object], db
+) -> str | None:
+    """Load the selected field's trusted current value and build one update.
+
+    Chat edits deliberately collect one field per confirmed action. This keeps
+    the interaction conversational and prevents a large manual edit form from
+    bypassing the pending-action workflow.
+    """
+    raw_employee_id = payload.get("employee_id")
+    if not raw_employee_id:
+        return None
+    try:
+        employee_id = uuid.UUID(str(raw_employee_id))
+    except ValueError:
+        payload.pop("employee_id", None)
+        return "Select a valid employee."
+
+    row = (
+        await db.execute(
+            select(Employee, User)
+            .join(User, User.id == Employee.user_id)
+            .where(Employee.id == employee_id)
+        )
+    ).one_or_none()
+    if row is None:
+        payload.pop("employee_id", None)
+        return "Employee not found. Select an employee."
+    employee, user = row
+    payload["_target_summary"] = f"{employee.first_name} {employee.last_name}"
+
+    field = payload.get("update_field")
+    if not field:
+        return None
+    field = str(field)
+    if field not in EMPLOYEE_UPDATE_FIELD_NAMES:
+        payload.pop("update_field", None)
+        return "Choose one of the available employee fields."
+
+    current_value = user.role.value if field == "role" else getattr(employee, field)
+    current_display: object = current_value
+    if field == "department_id" and current_value:
+        record = await db.get(Department, current_value)
+        current_display = record.name if record else current_value
+    elif field == "designation_id" and current_value:
+        record = await db.get(Designation, current_value)
+        current_display = record.title if record else current_value
+    payload["_current_update_value"] = (
+        current_value.value if hasattr(current_value, "value") else current_value
+    )
+    payload["_current_update_display"] = current_display or "Not set"
+
+    if "update_value" not in payload:
+        return None
+    value: object = payload["update_value"]
+    if isinstance(value, str):
+        value = value.strip()
+        if value.lower() in {"clear", "remove", "none", "not set"}:
+            value = None
+        elif field == "role":
+            value = value.lower()
+    try:
+        validated = EmployeeUpdate.model_validate({field: value})
+    except ValidationError as exc:
+        payload.pop("update_value", None)
+        payload.pop("updates", None)
+        message = exc.errors()[0].get("msg", "Enter a valid value.")
+        return f"That value is invalid for {EMPLOYEE_UPDATE_FIELD_LABELS[field].lower()}: {message}"
+    payload["updates"] = validated.model_dump(exclude_unset=True, mode="json")
+    return None
+
+
 def _missing_field(tool: ActionToolName, payload: dict[str, object]) -> str | None:
     missing = missing_slots(tool, payload)
     return missing[0] if missing else None
@@ -581,7 +722,12 @@ async def _enrich_confirmation(
     tool: ActionToolName, payload: dict[str, object], db
 ) -> None:
     """Resolve affected records before confirmation; never ask users to sign blanks."""
-    if tool in {"update_employee", "delete_employee", "correct_attendance"} and payload.get("employee_id"):
+    if tool in {
+        "update_employee",
+        "upload_employee_photo",
+        "delete_employee",
+        "correct_attendance",
+    } and payload.get("employee_id"):
         employee_id = uuid.UUID(str(payload["employee_id"]))
         row = (
             await db.execute(
@@ -809,6 +955,14 @@ def _pending_result(
         original_key = f"_original_{field_name}"
         interaction["current_value"] = payload.get(original_key)
         interaction["allow_keep"] = True
+    if tool == "update_employee" and missing_field == "update_value":
+        interaction["current_value"] = payload.get("_current_update_display")
+        selected_field = str(payload.get("update_field", ""))
+        interaction["field_label"] = EMPLOYEE_UPDATE_FIELD_LABELS.get(
+            selected_field, selected_field.replace("_", " ").title()
+        )
+        if selected_field in {"date_of_joining", "date_of_birth"}:
+            interaction["input_type"] = "date"
     if missing_field == "end_date" and payload.get("start_date"):
         interaction["min_date"] = payload["start_date"]
     if tool == "upload_policy" and missing_field == "policy_file":
@@ -816,7 +970,7 @@ def _pending_result(
             "title": payload.get("title", ""),
             "category": payload.get("category", ""),
         }
-    elif tool == "update_employee" and missing_field == "updates":
+    elif tool == "upload_employee_photo" and missing_field == "photo_file":
         interaction["parameters"] = {
             "employee_id": payload.get("employee_id", ""),
         }
@@ -858,9 +1012,17 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         )
     if tool == "update_employee":
         fields = payload.get("updates", {})
-        names = ", ".join(fields) if isinstance(fields, dict) else "selected fields"
+        if isinstance(fields, dict):
+            field, value = next(iter(fields.items()))
+            label = EMPLOYEE_UPDATE_FIELD_LABELS.get(
+                field, field.replace("_", " ").title()
+            )
+            current = payload.get("_current_update_display", "Not set")
+            change = f"{label}: {current} -> {value if value is not None else 'Not set'}"
+        else:
+            change = "selected employee field"
         return (
-            f"Update {payload.get('_target_summary', 'this employee')}: {names}. "
+            f"Update {payload.get('_target_summary', 'this employee')}\n{change}\n"
             "No changes have been made. Confirm?"
         )
     if tool == "update_announcement":
@@ -962,6 +1124,7 @@ def _execution_state(
     messages = {
         "create_employee": "Create employee",
         "update_employee": "Update employee",
+        "upload_employee_photo": "Upload employee photo",
         "delete_employee": "Delete employee",
         "approve_leave": "Approve leave request",
         "reject_leave": "Reject leave request",
@@ -1019,6 +1182,18 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             state, db, employee_id, EmployeeUpdate.model_validate(update_data)
         )
         message = f"Updated employee {data['full_name']}."
+    elif tool == "upload_employee_photo":
+        employee_id = _target_id(state, "employee_id")
+        employee = await db.get(Employee, employee_id)
+        if employee is None:
+            raise WriteToolConflict("Employee not found.")
+        if not payload.get("photo_file") or not employee.photo_url:
+            raise WriteToolConflict("The employee photo upload was not completed.")
+        data = {
+            "employee_id": str(employee.id),
+            "photo_url": employee.photo_url,
+        }
+        message = f"Updated the photo for {employee.first_name} {employee.last_name}."
     elif tool == "delete_employee":
         data = await delete_employee(state, db, _target_id(state, "employee_id"))
         message = "Employee deleted successfully."
@@ -1147,9 +1322,11 @@ async def handle_action(
 ) -> tuple[AgentToolResult, dict[str, object] | None, bool]:
     """Collect missing slots, gate sensitive actions, then execute."""
     pending = state.get("pending_action")
-    # While a workflow is active, the message is always an answer to that
-    # workflow. New action phrases cannot replace it; users must cancel/exit.
-    requested_tool = None if pending else select_action_tool(state["message"])
+    # Explicit action commands are detected even while a workflow is active:
+    # repeating the same command starts a clean flow, while a different action
+    # requires switch confirmation. Plain slot answers never match a tool and
+    # continue the current flow normally.
+    requested_tool = select_action_tool(state["message"])
     if (
         pending
         and requested_tool is not None
@@ -1360,7 +1537,12 @@ async def handle_action(
             )
             return result, next_pending, sanitized
 
-    if tool in {"update_employee", "delete_employee", "correct_attendance"}:
+    if tool in {
+        "update_employee",
+        "upload_employee_photo",
+        "delete_employee",
+        "correct_attendance",
+    }:
         resolution_error = await _resolve_employee_name(payload, db)
         if resolution_error:
             result, next_pending = _pending_result(
@@ -1373,6 +1555,31 @@ async def handle_action(
             )
             return result, next_pending, sanitized
 
+    if tool == "update_employee":
+        edit_error = await _prepare_employee_edit(payload, db)
+        if edit_error:
+            missing_edit_field = (
+                "employee_id"
+                if not payload.get("employee_id")
+                else "update_field"
+                if not payload.get("update_field")
+                else "update_value"
+            )
+            result, next_pending = _pending_result(
+                tool,
+                payload,
+                "slots",
+                edit_error,
+                missing_edit_field,
+                previous=pending,
+            )
+            suggestions, _ = await _slot_suggestions(
+                tool, missing_edit_field, state, db, payload
+            )
+            if suggestions:
+                result.setdefault("data", {})["suggestions"] = suggestions
+            return result, next_pending, sanitized
+
     if tool == "update_announcement":
         await _prepare_announcement_edit(payload, db)
     if tool == "update_policy":
@@ -1381,7 +1588,16 @@ async def handle_action(
     missing = _missing_field(tool, payload)
     if missing:
         prompt = FIELD_PROMPTS[missing]
-        if tool == "update_announcement":
+        if tool == "update_employee" and missing == "update_value":
+            label = EMPLOYEE_UPDATE_FIELD_LABELS.get(
+                str(payload.get("update_field", "")), "selected field"
+            )
+            prompt = (
+                f"Current {label.lower()}: "
+                f"{payload.get('_current_update_display', 'Not set')}\n"
+                "Enter the new value. For an optional field, type 'clear' to remove it."
+            )
+        elif tool == "update_announcement":
             current = payload.get(
                 f"_original_{missing.removeprefix('announcement_')}"
             )
@@ -1410,7 +1626,9 @@ async def handle_action(
                 f"Current policy {label}: {current}\n"
                 f"Enter a new {label}, or reply 'keep' to leave it unchanged."
             )
-        suggestions, prompt_override = await _slot_suggestions(tool, missing, state, db)
+        suggestions, prompt_override = await _slot_suggestions(
+            tool, missing, state, db, payload
+        )
         if prompt_override:
             prompt = prompt_override
         result, next_pending = _pending_result(

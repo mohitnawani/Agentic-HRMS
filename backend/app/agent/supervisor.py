@@ -19,6 +19,7 @@ DATABASE_PATTERNS = (
     r"\b(show|view|list|get)\b.*\baudit\b",
     r"\b(holiday|holidays|announcement|announcements)\b",
     r"\b(leave history|leave requests|pending leave|leave approved|leave rejected)\b",
+    r"\b(leave approvals?|approval leaves?|employee leaves?|hr leaves?)\b",
     r"\b(manage|review)\b.*\bleaves?\b",
     r"\b(how many|remaining)\b.*\b(leave|leaves|days)\b",
     r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ie|ies)\b",

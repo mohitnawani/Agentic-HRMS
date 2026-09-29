@@ -20,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEmployee, useEmployees } from "@/features/employees/useEmployees";
+import { useEmployees } from "@/features/employees/useEmployees";
+import { uploadEmployeePhoto } from "@/features/employees/employeeApi";
 import { usePolicies, useUploadPolicy } from "@/features/policies/usePolicies";
 import {
   useMyRequests,
@@ -28,11 +29,13 @@ import {
 } from "@/features/leave/useLeave";
 import type { LeaveRequest } from "@/features/leave/leaveApi";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api-client";
 import type { AgentToolResult } from "./agentTypes";
 
 const TOOL_LABELS: Record<string, string> = {
   get_leave_balance: "Leave balance",
   get_attendance_summary: "Attendance summary",
+  list_attendance_records: "Employee attendance",
   list_employees: "Employee search",
   get_employee_details: "Employee details",
   get_policy_catalog: "Policy catalog",
@@ -48,6 +51,7 @@ const TOOL_LABELS: Record<string, string> = {
   policy_summary: "Policy summary",
   create_employee: "Create employee",
   update_employee: "Update employee",
+  upload_employee_photo: "Upload employee photo",
   delete_employee: "Delete employee",
   approve_leave: "Approve leave",
   reject_leave: "Reject leave",
@@ -82,6 +86,9 @@ const FIELD_LABELS: Record<string, string> = {
   date: "Date",
   password: "Temporary password",
   employee_id: "Employee ID",
+  update_field: "Employee field",
+  update_value: "New value",
+  photo_file: "Employee photo",
   request_id: "Leave request ID",
   name: "Department name",
   title: "Title",
@@ -106,20 +113,6 @@ const DATE_FIELDS = new Set([
   "end_date",
   "start_date",
 ]);
-
-const UPDATE_FIELDS = [
-  { name: "role", label: "Account role" },
-  { name: "first_name", label: "First name" },
-  { name: "last_name", label: "Last name" },
-  { name: "phone", label: "Phone" },
-  { name: "employee_code", label: "Employee code" },
-  { name: "date_of_joining", label: "Date of joining", type: "date" },
-  { name: "date_of_birth", label: "Date of birth", type: "date" },
-  { name: "gender", label: "Gender" },
-  { name: "city", label: "City" },
-  { name: "address", label: "Address" },
-  { name: "emergency_contact", label: "Emergency contact" },
-] as const;
 
 type Respond = (
   message: string,
@@ -302,92 +295,42 @@ function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }
   );
 }
 
-function EmployeeUpdateForm({
-  employeeId,
-  disabled,
-  onRespond,
-}: {
-  employeeId: string;
-  disabled: boolean;
-  onRespond: Respond;
-}) {
-  const [changes, setChanges] = useState<Record<string, string>>({});
-  const { data: employee, isLoading, isError } = useEmployee(employeeId);
-  const initialValues = employee
-    ? Object.fromEntries(
-        UPDATE_FIELDS.map(({ name }) => [name, String(employee[name] ?? "")]),
-      )
-    : {};
-  const values = { ...initialValues, ...changes };
+function PolicyDownloadButton({ documentId, title }: { documentId: string; title: string }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
 
-  const updates: Record<string, string | null> = {};
-  for (const { name } of UPDATE_FIELDS) {
-    const current = (values[name] ?? "").trim();
-    const initial = (initialValues[name] ?? "").trim();
-    if (current !== initial) updates[name] = current || null;
-  }
-
-  const submitUpdates = (event: FormEvent) => {
-    event.preventDefault();
-    const fields = Object.keys(updates);
-    if (!fields.length) return;
-    onRespond(
-      "Update selected employee",
-      { updates },
-      `Update employee fields: ${fields.map((field) => field.replaceAll("_", " ")).join(", ")}`,
-    );
+  const download = async () => {
+    setPending(true);
+    setError("");
+    try {
+      const response = await apiClient.get(`/policies/${documentId}/download`, {
+        responseType: "blob",
+      });
+      const disposition: string = response.headers["content-disposition"] ?? "";
+      const match = /filename\*=UTF-8''([^;]+)|filename="([^"]+)"/.exec(disposition);
+      const filename = decodeURIComponent(match?.[1] ?? match?.[2] ?? `${title}.pdf`);
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Download failed.");
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
-    <form onSubmit={submitUpdates} className="mt-3 space-y-3 border-t border-warning/20 pt-3">
-      <div>
-        <p className="text-xs font-medium text-primary">Employee changes</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Existing values are prefilled. Change any fields, then save them together.
-        </p>
-      </div>
-      {isLoading && <p className="text-xs text-muted-foreground">Loading employee details...</p>}
-      {isError && <p className="text-xs text-destructive">Could not load employee details.</p>}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {UPDATE_FIELDS.map((field) => (
-          <label key={field.name} className={field.name === "address" ? "sm:col-span-2" : ""}>
-            <span className="mb-1 block text-xs text-muted-foreground">{field.label}</span>
-            {field.name === "role" ? (
-              <Select
-                value={values.role ?? "employee"}
-                onValueChange={(selectedRole) =>
-                  setChanges((current) => ({ ...current, role: selectedRole }))
-                }
-                disabled={disabled || isLoading || isError}
-              >
-                <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="employee">Employee</SelectItem>
-                  <SelectItem value="hr">HR</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                type={"type" in field ? field.type : "text"}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  setChanges((current) => ({ ...current, [field.name]: event.target.value }))
-                }
-                disabled={disabled || isLoading || isError}
-                required={["first_name", "last_name"].includes(field.name)}
-              />
-            )}
-          </label>
-        ))}
-      </div>
-      <Button
-        size="sm"
-        type="submit"
-        disabled={disabled || isLoading || isError || !Object.keys(updates).length}
-      >
-        Save changes
+    <span className="mt-2 block">
+      <Button size="sm" variant="outline" onClick={download} disabled={pending}>
+        {pending ? "Downloading…" : "Download PDF"}
       </Button>
-    </form>
+      {error && <span className="ml-2 text-destructive">{error}</span>}
+    </span>
   );
 }
 
@@ -499,6 +442,68 @@ function PendingLeaveRequestSelector(props: { disabled: boolean; onRespond: Resp
       loading={requestsLoading || employeesLoading}
       {...props}
     />
+  );
+}
+
+function EmployeePhotoUploader({
+  employeeId,
+  disabled,
+  onRespond,
+}: {
+  employeeId: string;
+  disabled: boolean;
+  onRespond: Respond;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
+  const submitPhoto = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file || !employeeId) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      const employee = await uploadEmployeePhoto(employeeId, file);
+      onRespond(
+        "Employee photo upload completed",
+        { photo_file: "uploaded" },
+        `Uploaded photo for ${employee.first_name} ${employee.last_name}`,
+      );
+    } catch (error) {
+      setUploadError(requestErrorMessage(error, "Could not upload the employee photo."));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submitPhoto} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
+      <label className="block text-xs font-medium text-primary">Choose employee photo</label>
+      <Input
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        disabled={disabled || uploading}
+        required
+      />
+      <p className="text-xs text-muted-foreground">PNG, JPG, WEBP, or GIF; maximum 5 MB.</p>
+      {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
+      <div className="flex gap-2">
+        <Button size="sm" type="submit" disabled={disabled || uploading || !file}>
+          {uploading ? "Uploading..." : "Upload photo"}
+        </Button>
+        <Button
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={() => onRespond("cancel")}
+          disabled={disabled || uploading}
+        >
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -688,6 +693,9 @@ export default function ToolResultCard({
   const announcements = isRecord(data) && Array.isArray(data.announcements)
     ? data.announcements
     : [];
+  const attendanceRecords = isRecord(data) && Array.isArray(data.attendance_records)
+    ? data.attendance_records
+    : [];
   const departments = isRecord(data) && Array.isArray(data.departments) ? data.departments : [];
   const designations = isRecord(data) && Array.isArray(data.designations) ? data.designations : [];
   const users = isRecord(data) && Array.isArray(data.users) ? data.users : [];
@@ -708,6 +716,8 @@ export default function ToolResultCard({
   const minimumDate =
     isRecord(data) && typeof data.min_date === "string" ? data.min_date : undefined;
   const currentValue = isRecord(data) ? data.current_value : undefined;
+  const requestedInputType =
+    isRecord(data) && typeof data.input_type === "string" ? data.input_type : undefined;
   const suggestions =
     isRecord(data) && Array.isArray(data.suggestions)
       ? data.suggestions.filter(isRecord)
@@ -735,7 +745,9 @@ export default function ToolResultCard({
   };
 
   const inputType =
-    missingField === "email"
+    requestedInputType === "date"
+      ? "date"
+      : missingField === "email"
       ? "email"
       : missingField && DATE_FIELDS.has(missingField)
         ? "date"
@@ -789,6 +801,18 @@ export default function ToolResultCard({
 
       {interactive &&
         result.status === "needs_input" &&
+        missingField === "photo_file" &&
+        result.tool === "upload_employee_photo" &&
+        onRespond && (
+          <EmployeePhotoUploader
+            employeeId={String(pendingParameters.employee_id ?? "")}
+            disabled={disabled}
+            onRespond={onRespond}
+          />
+        )}
+
+      {interactive &&
+        result.status === "needs_input" &&
         missingField === "policy_file" &&
         onRespond && (
           <PolicyUploader
@@ -805,18 +829,6 @@ export default function ToolResultCard({
         onRespond && (
           <PolicySelector
             action={result.tool === "update_policy" ? "edit" : "delete"}
-            disabled={disabled}
-            onRespond={onRespond}
-          />
-        )}
-
-      {interactive &&
-        result.status === "needs_input" &&
-        missingField === "updates" &&
-        result.tool !== "update_announcement" &&
-        onRespond && (
-          <EmployeeUpdateForm
-            employeeId={String(pendingParameters.employee_id ?? "")}
             disabled={disabled}
             onRespond={onRespond}
           />
@@ -884,12 +896,12 @@ export default function ToolResultCard({
           </div>
         )}
 
-      {interactive && result.status === "needs_input" && missingField && suggestions.length === 0 && !["employee_id", "policy_file", "document_id", "updates", "request_id"].includes(missingField) && onRespond && (
+      {interactive && result.status === "needs_input" && missingField && suggestions.length === 0 && !["employee_id", "photo_file", "policy_file", "document_id", "request_id"].includes(missingField) && onRespond && (
         <form onSubmit={submitSlot} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
           <label className="block text-xs font-medium text-primary">
             {FIELD_LABELS[missingField] ?? "Required information"}
           </label>
-          {(missingField.startsWith("announcement_") || missingField.startsWith("policy_")) && currentValue !== undefined && (
+          {(missingField === "update_value" || missingField.startsWith("announcement_") || missingField.startsWith("policy_")) && currentValue !== undefined && (
             <div className="rounded-lg border border-border bg-secondary/60 px-3 py-2 text-xs">
               <span className="font-medium text-primary">Current value: </span>
               <span className="whitespace-pre-wrap text-muted-foreground">
@@ -967,6 +979,12 @@ export default function ToolResultCard({
                 <p className="mt-0.5 capitalize text-muted-foreground">
                   {String(policy.category ?? "Uncategorized")} · Version {String(policy.version ?? 1)}
                 </p>
+                {typeof policy.document_id === "string" && policy.document_id && (
+                  <PolicyDownloadButton
+                    documentId={policy.document_id}
+                    title={String(policy.title ?? "Policy")}
+                  />
+                )}
               </div>
             );
           })}
@@ -1039,6 +1057,29 @@ export default function ToolResultCard({
         </div>
       )}
 
+      {attendanceRecords.length > 0 && (
+        <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+          {attendanceRecords.map((item, index) => {
+            const record = isRecord(item) ? item : {};
+            return (
+              <div key={String(record.attendance_id ?? index)} className="rounded-lg bg-secondary/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-primary">{String(record.employee ?? "Employee")}</p>
+                  <Badge variant={record.status === "present" ? "success" : record.status === "absent" ? "destructive" : "warning"}>
+                    {String(record.status ?? "unknown").replaceAll("_", " ")}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-muted-foreground">
+                  {String(record.date ?? "")}
+                  {record.check_in ? ` · In: ${String(record.check_in).slice(11, 16)}` : ""}
+                  {record.check_out ? ` · Out: ${String(record.check_out).slice(11, 16)}` : ""}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {holidays.length > 0 && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {holidays.map((item, index) => {
@@ -1085,7 +1126,7 @@ export default function ToolResultCard({
         </div>
       )}
 
-      {!balances.length && !employees.length && !policies.length && !policySummaries.length && !auditRecords.length && !leaveRequests.length && !holidays.length && !announcements.length && !managementRecords.length && details.length > 0 && (
+      {!balances.length && !employees.length && !policies.length && !policySummaries.length && !auditRecords.length && !leaveRequests.length && !attendanceRecords.length && !holidays.length && !announcements.length && !managementRecords.length && details.length > 0 && (
         <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           {details.map(([key, item]) => (
             <div key={key} className="flex justify-between gap-2 border-b border-border/60 py-1">

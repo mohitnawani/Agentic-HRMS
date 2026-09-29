@@ -76,6 +76,9 @@ def test_admin_management_commands_select_the_expected_tools() -> None:
 def test_admin_read_commands_select_management_lists() -> None:
     assert select_database_tool("how many holidays are there") == "get_holidays"
     assert select_database_tool("show pending leaves") == "list_pending_leave_requests"
+    assert select_database_tool("show me the leave approvals") == "list_pending_leave_requests"
+    assert select_database_tool("show employee leaves") == "list_pending_leave_requests"
+    assert select_database_tool("show HR pending leaves") == "list_pending_leave_requests"
     assert select_database_tool("manage leave requests") == "list_pending_leave_requests"
     assert select_database_tool("show departments") == "list_departments"
     assert select_database_tool("show designations") == "list_designations"

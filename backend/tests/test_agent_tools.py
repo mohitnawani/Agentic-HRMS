@@ -4,7 +4,6 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.nodes.database_agent import run_database_query, select_database_tool
 from app.agent.state import AgentState
@@ -74,6 +73,20 @@ def test_selector_routes_counts_and_dashboard() -> None:
     assert select_database_tool("how many departments are there") == "list_departments"
     assert select_database_tool("list all employees in Engineering") == "list_employees"
     assert select_database_tool("list users") == "list_users"
+    assert select_database_tool("show all employee attendance") == "list_attendance_records"
+    assert select_database_tool("show my attendance") == "get_attendance_summary"
+
+
+@pytest.mark.asyncio
+async def test_hr_attendance_query_uses_organization_records_not_own_summary() -> None:
+    hr = await _actor(RoleEnum.HR, "attendancehr")
+    async with async_session() as session:
+        result = await run_database_query(
+            _state(hr.id, RoleEnum.HR, "show all employee attendance"), session
+        )
+    assert result["status"] == "success"
+    assert result["tool"] == "list_attendance_records"
+    assert "attendance_records" in result["data"]
 
 
 @pytest.mark.asyncio

@@ -151,6 +151,13 @@ DESIGNATIONS: dict[str, tuple[str, ...]] = {
 
 DEMO_PASSWORD = "DemoPass123!"
 
+DEMO_ADMIN_EMAILS: tuple[str, ...] = (
+    "admin.demo@company.com",
+    "admin.operations@company.com",
+    "admin.management@company.com",
+    "admin.support@company.com",
+)
+
 # email, system role, first name, last name, department, designation,
 # employee code, date of joining. HR uses the HR role in Human Resources;
 # everyone else uses the Employee role in their own department.
@@ -303,9 +310,11 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
     """Seed a small demo team plus sample HR records. Safe to re-run."""
     demo_hash = hash_password(DEMO_PASSWORD)
     employees_by_email: dict[str, Employee] = {}
-    admin_user = await _get_or_create_user(
-        session, "admin.demo@company.com", RoleEnum.ADMIN, demo_hash
-    )
+    admin_users = [
+        await _get_or_create_user(session, email, RoleEnum.ADMIN, demo_hash)
+        for email in DEMO_ADMIN_EMAILS
+    ]
+    admin_user = admin_users[0]
 
     for email, role, first, last, dept_name, desig_title, code, doj in DEMO_TEAM:
         department = departments[dept_name]

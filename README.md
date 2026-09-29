@@ -35,6 +35,9 @@ have content immediately. All demo accounts use the password `DemoPass123!`:
 | Email | Role | Name |
 | --- | --- | --- |
 | `admin.demo@company.com` | Admin | Vikram Malhotra |
+| `admin.operations@company.com` | Admin | Operations Admin |
+| `admin.management@company.com` | Admin | Management Admin |
+| `admin.support@company.com` | Admin | Support Admin |
 | `hr.demo@company.com` | HR | Priya Nair |
 | `rahul.verma@company.com` | Employee | Rahul Verma |
 | `amit.patel@company.com` | Employee | Amit Patel |

@@ -222,6 +222,57 @@ async def test_own_profile_query_returns_requested_authenticated_user_fields():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("role", [RoleEnum.ADMIN, RoleEnum.HR])
+async def test_admin_and_hr_can_get_employee_details_by_name(role):
+    async with async_session() as db:
+        actor, _ = await create_actor(db, role, f"lookupactor{uuid.uuid4().hex}")
+        label = f"lookuptarget{uuid.uuid4().hex}"
+        target_user, target = await create_actor(db, RoleEnum.EMPLOYEE, label)
+        target.employee_code = f"EMP-{uuid.uuid4().hex[:8].upper()}"
+        target.phone = "+91 98765 43210"
+        await db.flush()
+
+        result = await run_database_query(
+            state_for(actor, f"Show employee {label.title()} Tester details"), db
+        )
+
+        assert result["status"] == "success"
+        assert result["tool"] == "get_employee_details"
+        assert result["data"]["employee_id"] == str(target.id)
+        assert result["data"]["email"] == target_user.email
+        assert result["data"]["employee_code"] == target.employee_code
+
+        phone_result = await run_database_query(
+            state_for(actor, "Show employee phone 9876543210 details"), db
+        )
+        assert phone_result["status"] == "success"
+        assert phone_result["data"]["employee_id"] == str(target.id)
+        assert phone_result["data"]["phone"] == "+91 98765 43210"
+        await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_employee_name_returns_only_matching_choices():
+    async with async_session() as db:
+        actor, _ = await create_actor(
+            db, RoleEnum.ADMIN, f"ambiguityactor{uuid.uuid4().hex}"
+        )
+        label = f"sameperson{uuid.uuid4().hex}"
+        await create_actor(db, RoleEnum.EMPLOYEE, label)
+        await create_actor(db, RoleEnum.EMPLOYEE, label)
+
+        result = await run_database_query(
+            state_for(actor, f"Find employee {label}"), db
+        )
+
+        assert result["status"] == "needs_input"
+        assert result["tool"] == "list_employees"
+        assert len(result["data"]) == 2
+        assert all(label in str(item["full_name"]).lower() for item in result["data"])
+        await db.rollback()
+
+
+@pytest.mark.asyncio
 async def test_policy_catalog_returns_count_and_safe_metadata():
     async with async_session() as db:
         actor, _ = await create_actor(db, RoleEnum.EMPLOYEE, "policy_catalog")

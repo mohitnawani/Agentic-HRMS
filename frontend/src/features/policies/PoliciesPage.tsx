@@ -18,7 +18,7 @@ import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import { useAppSelector } from "@/store/hooks";
-import { useDeletePolicy, usePolicies, useUploadPolicy } from "./usePolicies";
+import { useDeletePolicy, usePolicies, useUpdatePolicy, useUploadPolicy } from "./usePolicies";
 import { downloadPolicyFile, type PolicyDocument } from "./policyApi";
 
 export default function PoliciesPage() {
@@ -27,8 +27,13 @@ export default function PoliciesPage() {
   const { data: allPolicies, isLoading, isError } = usePolicies();
   const uploadPolicy = useUploadPolicy();
   const deletePolicy = useDeletePolicy();
+  const updatePolicy = useUpdatePolicy();
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<PolicyDocument | null>(null);
+  const [toEdit, setToEdit] = useState<PolicyDocument | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editStep, setEditStep] = useState<0 | 1>(0);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<{
@@ -142,6 +147,20 @@ export default function PoliciesPage() {
                   {canUpload && (
                     <Button
                       size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setToEdit(d);
+                        setEditTitle(d.title);
+                        setEditCategory(d.category);
+                        setEditStep(0);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                  {canUpload && (
+                    <Button
+                      size="sm"
                       variant="destructive"
                       onClick={() => setToDelete(d)}
                     >
@@ -154,6 +173,83 @@ export default function PoliciesPage() {
           ]}
         />
       )}
+
+      <Dialog open={!!toEdit} onOpenChange={(nextOpen) => !nextOpen && setToEdit(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Edit Policy — Step {editStep + 1} of 2
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (editStep === 0) {
+                if (editTitle.trim()) setEditStep(1);
+                return;
+              }
+              if (!toEdit || !editTitle.trim() || !editCategory.trim()) return;
+              await updatePolicy.mutateAsync({
+                id: toEdit.id,
+                data: { title: editTitle.trim(), category: editCategory.trim() },
+              });
+              setToEdit(null);
+            }}
+          >
+            {editStep === 0 ? (
+              <div className="space-y-1">
+                <Label>Policy title</Label>
+                <Input
+                  value={editTitle}
+                  onChange={(event) => setEditTitle(event.target.value)}
+                  required
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  The current title is prefilled. Edit it or leave it unchanged.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label>Policy category</Label>
+                <Input
+                  value={editCategory}
+                  onChange={(event) => setEditCategory(event.target.value)}
+                  required
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  The current category is prefilled. Edit it or leave it unchanged.
+                </p>
+              </div>
+            )}
+            <div className="flex gap-2">
+              {editStep === 1 && (
+                <Button type="button" variant="outline" onClick={() => setEditStep(0)}>
+                  Back
+                </Button>
+              )}
+              {editStep === 0 ? (
+                <Button
+                  type="button"
+                  disabled={!editTitle.trim()}
+                  onClick={() => setEditStep(1)}
+                >
+                  Continue
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  disabled={updatePolicy.isPending || !editCategory.trim()}
+                >
+                  {updatePolicy.isPending ? "Saving..." : "Save changes"}
+                </Button>
+              )}
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!toDelete} onOpenChange={(nextOpen) => !nextOpen && setToDelete(null)}>
         <AlertDialogContent>

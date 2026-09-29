@@ -49,7 +49,7 @@ type FormValues = z.infer<typeof schema>;
 
 const STEPS = ["Work Profile", "Personal Info", "Banking", "Documents"] as const;
 const STEP_FIELDS: Record<number, (keyof FormValues)[]> = {
-  0: ["date_of_joining", "department_id", "designation_id", "employee_code"],
+  0: ["date_of_joining", "department_id", "designation_id", "employee_code", "role"],
   1: ["first_name", "last_name", "email", "password", "phone", "date_of_birth", "gender", "address", "city", "emergency_contact", "photo"],
   2: ["bank_name", "account_number", "ifsc_code"],
   3: ["id_proof_type", "id_proof_number"],

@@ -38,9 +38,10 @@ from app.agent.tools.write_tools import (
     delete_policy,
     preview_leave_application,
     record_attendance_action,
-    update_announcement,
     reject_leave,
+    update_announcement,
     update_employee,
+    update_policy,
 )
 from app.models.announcement import Announcement
 from app.models.attendance import Attendance
@@ -50,6 +51,7 @@ from app.models.employee import Employee
 from app.models.holiday import Holiday
 from app.models.leave import LeaveRequest, LeaveType
 from app.models.policy_document import PolicyDocument
+from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.announcement import AnnouncementCreate, AnnouncementUpdate
 from app.schemas.attendance import AttendanceDateCorrection
@@ -77,6 +79,7 @@ ActionToolName = Literal[
     "create_holiday",
     "delete_holiday",
     "upload_policy",
+    "update_policy",
     "delete_policy",
     "apply_leave",
     "cancel_leave",
@@ -113,11 +116,21 @@ CANCELLATION_WORDS = {
 PENDING_MAX_TURNS = 6
 PENDING_MAX_AGE = timedelta(minutes=10)
 
+
+def _assistant_role_name(state: AgentState) -> str:
+    role = RoleEnum(state["role"])
+    return {
+        RoleEnum.ADMIN: "Admin",
+        RoleEnum.HR: "HR",
+        RoleEnum.EMPLOYEE: "Employee",
+    }[role]
+
 FIELD_PROMPTS = {
     "first_name": "What is the employee's first name?",
     "last_name": "What is the employee's last name?",
     "email": "What is the employee's email address?",
     "date_of_joining": "What is the joining date? Please use YYYY-MM-DD.",
+    "role": "Which account role should this employee have?",
     "employee_id": "What is the employee ID?",
     "request_id": "What is the leave request ID?",
     "updates": "Which employee fields should be updated?",
@@ -125,10 +138,15 @@ FIELD_PROMPTS = {
     "department_id": "Which department should be used?",
     "designation_id": "Which designation should be deleted?",
     "announcement_id": "Which announcement should be deleted?",
+    "announcement_title": "What should the announcement title be?",
+    "announcement_body": "What should the announcement message say?",
+    "announcement_is_active": "Should this announcement be visible to users?",
     "holiday_id": "Which holiday should be deleted?",
     "title": "What title should be used?",
     "body": "What should the announcement say?",
     "category": "What category should this policy use?",
+    "policy_title": "What should the policy title be?",
+    "policy_category": "What should the policy category be?",
     "policy_file": "Choose the PDF policy file to upload.",
     "document_id": "Which policy document should be deleted?",
     "leave_type_id": "Which leave type would you like to use?",
@@ -191,7 +209,12 @@ async def _slot_suggestions(
         return [{"label": f"{row.name} · {row.date}", "value": str(row.id)} for row in rows], None
     if missing == "announcement_id":
         rows = list((await db.scalars(select(Announcement).order_by(Announcement.created_at.desc()).limit(30))).all())
-        return [{"label": row.title, "value": str(row.id)} for row in rows], None
+        prompt = (
+            "Which announcement would you like to edit?"
+            if tool == "update_announcement"
+            else "Which announcement should be deleted?"
+        )
+        return [{"label": row.title, "value": str(row.id)} for row in rows], prompt
     if missing == "user_id":
         rows = list((await db.scalars(select(User).order_by(User.email).limit(40))).all())
         return [{"label": f"{row.email} · {row.role.value}", "value": str(row.id)} for row in rows if row.id != state["user_id"]], None
@@ -200,11 +223,27 @@ async def _slot_suggestions(
         return [{"label": f"{employee.first_name} {employee.last_name} · {record.date} · {record.status.value}", "value": str(record.id)} for record, employee in rows], None
     if missing == "document_id":
         rows = list((await db.scalars(select(PolicyDocument).order_by(PolicyDocument.title).limit(30))).all())
-        return [{"label": f"{row.title} · {row.category}", "value": str(row.id)} for row in rows], None
+        prompt = (
+            "Which policy would you like to edit?"
+            if tool == "update_policy"
+            else "Which policy document should be deleted?"
+        )
+        return [{"label": f"{row.title} · {row.category}", "value": str(row.id)} for row in rows], prompt
     if missing == "role":
-        return [{"label": label, "value": value} for label, value in (("Employee", "employee"), ("HR", "hr"), ("Admin", "admin"))], None
+        return [
+            {"label": "Employee", "value": "employee"},
+            {"label": "HR", "value": "hr"},
+        ], "Should this account be an Employee or HR?"
     if missing == "active":
         return [{"label": "Activate", "value": "true"}, {"label": "Deactivate", "value": "false"}], None
+    if missing == "announcement_is_active":
+        options = [
+            {"label": "Visible", "value": "true"},
+            {"label": "Hidden", "value": "false"},
+        ]
+        if tool == "update_announcement":
+            options.insert(0, {"label": "Keep current visibility", "value": "keep"})
+        return options, None
     if missing == "status":
         return [{"label": value.replace("_", " ").title(), "value": value} for value in ("present", "absent", "late", "half_day")], None
     if missing == "field":
@@ -213,7 +252,6 @@ async def _slot_suggestions(
             "update_department": ("name", "description"),
             "update_designation": ("title", "department_id"),
             "update_holiday": ("name", "date"),
-            "update_announcement": ("title", "body", "is_active"),
         }
         return [{"label": value.replace("_", " ").title(), "value": value} for value in fields_by_tool.get(tool, ())], None
     if tool == "apply_leave" and missing == "leave_type_id":
@@ -257,6 +295,7 @@ def select_action_tool(message: str) -> ActionToolName | None:
         (r"\b(update|change|edit)\b.*\b(employees?|users?)\b", "update_employee"),
         (r"\b(delete|remove)\b.*\b(employees?|users?)\b", "delete_employee"),
         (r"\b(delete|remove)\b.*\b(policies|policy|documents?)\b", "delete_policy"),
+        (r"\b(update|change|edit|rename)\b.*\b(policies|policy|documents?)\b", "update_policy"),
         (r"\b(delete|remove)\b.*\bdepartments?\b", "delete_department"),
         (r"\b(delete|remove)\b.*\bdesignations?\b", "delete_designation"),
         (r"\b(delete|remove)\b.*\bannouncements?\b", "delete_announcement"),
@@ -341,7 +380,7 @@ def _extract_initial_payload(
         payload.setdefault("employee_id", uuid_match.group())
     if uuid_match and tool in {"approve_leave", "reject_leave", "cancel_leave"}:
         payload.setdefault("request_id", uuid_match.group())
-    if uuid_match and tool == "delete_policy":
+    if uuid_match and tool in {"delete_policy", "update_policy"}:
         payload.setdefault("document_id", uuid_match.group())
     id_fields = {
         "delete_department": "department_id",
@@ -349,6 +388,8 @@ def _extract_initial_payload(
         "delete_announcement": "announcement_id",
         "delete_holiday": "holiday_id",
     }
+    if uuid_match and tool == "update_announcement":
+        payload.setdefault("announcement_id", uuid_match.group())
     if uuid_match and tool in id_fields:
         payload.setdefault(id_fields[tool], uuid_match.group())
 
@@ -575,7 +616,7 @@ async def _enrich_confirmation(
             f"{employee.first_name} {employee.last_name}: {leave_type.name}, "
             f"{request.start_date} to {request.end_date}"
         )
-    elif tool == "delete_policy" and payload.get("document_id"):
+    elif tool in {"delete_policy", "update_policy"} and payload.get("document_id"):
         document = await db.get(PolicyDocument, uuid.UUID(str(payload["document_id"])))
         if document is None:
             raise WriteToolConflict("Policy document not found.")
@@ -590,12 +631,9 @@ async def _enrich_confirmation(
         if record is None:
             raise WriteToolConflict("Designation not found.")
         payload["_target_summary"] = record.title
-    elif tool == "delete_announcement" and payload.get("announcement_id"):
-        record = await db.get(Announcement, uuid.UUID(str(payload["announcement_id"])))
-        if record is None:
-            raise WriteToolConflict("Announcement not found.")
-        payload["_target_summary"] = record.title
-    elif tool == "update_announcement" and payload.get("announcement_id"):
+    elif tool in {"delete_announcement", "update_announcement"} and payload.get(
+        "announcement_id"
+    ):
         record = await db.get(Announcement, uuid.UUID(str(payload["announcement_id"])))
         if record is None:
             raise WriteToolConflict("Announcement not found.")
@@ -612,6 +650,60 @@ async def _enrich_confirmation(
         if department is None:
             raise WriteToolConflict("Department not found.")
         payload["_department_name"] = department.name
+
+
+async def _prepare_announcement_edit(payload: dict[str, object], db) -> None:
+    """Load trusted current values for the guided announcement edit flow."""
+    if not payload.get("announcement_id") or "_original_title" in payload:
+        return
+    try:
+        announcement_id = uuid.UUID(str(payload["announcement_id"]))
+    except ValueError as exc:
+        raise WriteToolConflict("Select a valid announcement.") from exc
+    record = await db.get(Announcement, announcement_id)
+    if record is None:
+        raise WriteToolConflict("Announcement not found.")
+    payload.update(
+        {
+            "_original_title": record.title,
+            "_original_body": record.body,
+            "_original_is_active": record.is_active,
+            "_target_summary": record.title,
+        }
+    )
+
+
+def _announcement_updates(payload: dict[str, object]) -> dict[str, object]:
+    """Return only changed fields after every edit step has been reviewed."""
+    proposed = {
+        "title": payload.get("announcement_title"),
+        "body": payload.get("announcement_body"),
+        "is_active": payload.get("announcement_is_active"),
+    }
+    return {
+        field: value
+        for field, value in proposed.items()
+        if value != payload.get(f"_original_{field}")
+    }
+
+
+async def _prepare_policy_edit(payload: dict[str, object], db) -> None:
+    if not payload.get("document_id") or "_original_title" in payload:
+        return
+    try:
+        document_id = uuid.UUID(str(payload["document_id"]))
+    except ValueError as exc:
+        raise WriteToolConflict("Select a valid policy document.") from exc
+    document = await db.get(PolicyDocument, document_id)
+    if document is None:
+        raise WriteToolConflict("Policy document not found.")
+    payload.update(
+        {
+            "_original_title": document.title,
+            "_original_category": document.category,
+            "_target_summary": f"{document.title} ({document.category})",
+        }
+    )
 
 
 async def _validate_employee_email(payload: dict[str, object], db) -> str | None:
@@ -642,10 +734,24 @@ def _merge_slot_answer(
     field: str, message: str, supplied: dict[str, object], payload: dict[str, object]
 ) -> bool:
     payload.update(supplied)
-    if field in supplied:
+    supplied_value = supplied.get(field)
+    normalized = str(supplied_value if field in supplied else message).strip()
+    if field in {"announcement_title", "announcement_body", "policy_title", "policy_category"}:
+        field_name = field.removeprefix("announcement_").removeprefix("policy_")
+        original_key = f"_original_{field_name}"
+        payload[field] = (
+            payload.get(original_key)
+            if normalized.lower() in {"keep", "keep current", "same", "no change"}
+            else normalized
+        )
+    elif field == "announcement_is_active":
+        if normalized.lower() in {"keep", "keep current", "same", "no change"}:
+            payload[field] = payload.get("_original_is_active")
+        else:
+            payload[field] = normalized.lower() in {"true", "yes", "visible", "active"}
+    elif field in supplied:
         return field == "password"
-    normalized = message.strip()
-    if field == "email":
+    elif field == "email":
         match = EMAIL_PATTERN.search(normalized)
         payload[field] = match.group() if match else normalized
     elif field in {"date_of_joining", "date"}:
@@ -692,6 +798,17 @@ def _pending_result(
     interaction: dict[str, object] = {"stage": stage}
     if missing_field:
         interaction["missing_field"] = missing_field
+    if tool in {"update_announcement", "update_policy"} and missing_field in {
+        "announcement_title",
+        "announcement_body",
+        "announcement_is_active",
+        "policy_title",
+        "policy_category",
+    }:
+        field_name = missing_field.removeprefix("announcement_").removeprefix("policy_")
+        original_key = f"_original_{field_name}"
+        interaction["current_value"] = payload.get(original_key)
+        interaction["allow_keep"] = True
     if missing_field == "end_date" and payload.get("start_date"):
         interaction["min_date"] = payload["start_date"]
     if tool == "upload_policy" and missing_field == "policy_file":
@@ -736,6 +853,7 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
             f"Name: {payload.get('first_name')} {payload.get('last_name')}\n"
             f"Email: {payload.get('email')}\n"
             f"Joining date: {payload.get('date_of_joining')}\n"
+            f"Role: {str(payload.get('role')).upper()}\n"
             "A temporary password will be generated securely. Confirm?"
         )
     if tool == "update_employee":
@@ -747,10 +865,16 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         )
     if tool == "update_announcement":
         fields = payload.get("updates", {})
-        names = ", ".join(fields) if isinstance(fields, dict) else "selected fields"
+        if isinstance(fields, dict):
+            lines = "\n".join(
+                f"- {field.replace('_', ' ').title()}: {value}"
+                for field, value in fields.items()
+            )
+        else:
+            lines = "Selected announcement fields"
         return (
-            f"Update {payload.get('_target_summary', 'this announcement')}: {names}. "
-            "No changes have been made. Confirm?"
+            f"Update {payload.get('_target_summary', 'this announcement')} with:\n"
+            f"{lines}\nNo changes have been made. Confirm?"
         )
     if tool == "create_department":
         return f"Create department: {payload.get('name')}. Confirm?"
@@ -769,7 +893,9 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
     if tool == "create_announcement":
         return (
             f"Publish announcement: {payload.get('title')}\n"
-            f"Message: {payload.get('body')}\nConfirm?"
+            f"Message: {payload.get('body')}\n"
+            f"Visibility: {'Visible' if payload.get('announcement_is_active') else 'Hidden'}\n"
+            "Confirm?"
         )
     if tool == "correct_attendance":
         return (
@@ -783,6 +909,18 @@ def _confirmation_prompt(tool: ActionToolName, payload: dict[str, object]) -> st
         return (
             f"Finish policy upload: {payload.get('title')} "
             f"({payload.get('category')}). Confirm?"
+        )
+    if tool == "update_policy":
+        changed: list[tuple[str, object]] = []
+        if payload.get("policy_title") != payload.get("_original_title"):
+            changed.append(("Title", payload.get("policy_title")))
+        if payload.get("policy_category") != payload.get("_original_category"):
+            changed.append(("Category", payload.get("policy_category")))
+        change_lines = "\n".join(f"- {label}: {value}" for label, value in changed)
+        return (
+            f"Update policy {payload.get('_target_summary', '')}:\n"
+            f"{change_lines}\n"
+            "No changes have been made. Confirm?"
         )
     labels = {
         "delete_employee": "delete this employee",
@@ -838,6 +976,7 @@ def _execution_state(
         "create_holiday": "Create holiday",
         "delete_holiday": "Delete holiday",
         "upload_policy": "Upload policy",
+        "update_policy": "Update policy",
         "delete_policy": "Delete policy",
         "apply_leave": "Apply for leave",
         "cancel_leave": "Cancel leave request",
@@ -856,7 +995,10 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             "agent": "action",
             "status": "error",
             "tool": "unknown",
-            "message": "I could not identify the requested HR action.",
+            "message": (
+                f"I could not identify the requested {_assistant_role_name(state)} "
+                "Assistant action."
+            ),
         }
 
     payload = dict(state.get("action_payload", {}))
@@ -902,8 +1044,13 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
             f"{data['default_annual_days']} days per year."
         )
     elif tool == "create_announcement":
+        create_payload = {
+            "title": payload.get("title"),
+            "body": payload.get("body"),
+            "is_active": payload.get("announcement_is_active", True),
+        }
         data = await create_announcement(
-            state, db, AnnouncementCreate.model_validate(payload)
+            state, db, AnnouncementCreate.model_validate(create_payload)
         )
         message = f"Published announcement {data['title']}."
     elif tool == "delete_announcement":
@@ -932,6 +1079,15 @@ async def run_action(state: AgentState, db) -> AgentToolResult:
     elif tool == "delete_policy":
         data = await delete_policy(state, db, _target_id(state, "document_id"))
         message = f"Deleted policy {data['title']} and its indexed content."
+    elif tool == "update_policy":
+        data = await update_policy(
+            state,
+            db,
+            _target_id(state, "document_id"),
+            title=str(payload["policy_title"]),
+            category=str(payload["policy_category"]),
+        )
+        message = f"Updated policy {data['title']}."
     elif tool == "apply_leave":
         data = await apply_leave(
             state, db, LeaveRequestCreate.model_validate(payload)
@@ -1184,7 +1340,10 @@ async def handle_action(
                     "agent": "action",
                     "status": "error",
                     "tool": "unknown",
-                    "message": "I could not identify the requested HR action.",
+                    "message": (
+                        f"I could not identify the requested {_assistant_role_name(state)} "
+                        "Assistant action."
+                    ),
                 },
                 None,
                 False,
@@ -1214,9 +1373,43 @@ async def handle_action(
             )
             return result, next_pending, sanitized
 
+    if tool == "update_announcement":
+        await _prepare_announcement_edit(payload, db)
+    if tool == "update_policy":
+        await _prepare_policy_edit(payload, db)
+
     missing = _missing_field(tool, payload)
     if missing:
         prompt = FIELD_PROMPTS[missing]
+        if tool == "update_announcement":
+            current = payload.get(
+                f"_original_{missing.removeprefix('announcement_')}"
+            )
+            if missing == "announcement_title":
+                prompt = (
+                    f"Current title: {current}\n"
+                    "Enter a new title, or reply 'keep' to leave it unchanged."
+                )
+            elif missing == "announcement_body":
+                prompt = (
+                    f"Current message: {current}\n"
+                    "Enter the new message, or reply 'keep' to leave it unchanged."
+                )
+            elif missing == "announcement_is_active":
+                visibility = "Visible" if current else "Hidden"
+                prompt = (
+                    f"Current visibility: {visibility}. Choose whether the announcement "
+                    "should remain visible or be hidden."
+                )
+        elif tool == "update_policy":
+            current = payload.get(
+                f"_original_{missing.removeprefix('policy_')}"
+            )
+            label = "title" if missing == "policy_title" else "category"
+            prompt = (
+                f"Current policy {label}: {current}\n"
+                f"Enter a new {label}, or reply 'keep' to leave it unchanged."
+            )
         suggestions, prompt_override = await _slot_suggestions(tool, missing, state, db)
         if prompt_override:
             prompt = prompt_override
@@ -1231,6 +1424,35 @@ async def handle_action(
         if suggestions:
             result.setdefault("data", {})["suggestions"] = suggestions
         return result, next_pending, sanitized
+
+    if tool == "update_announcement":
+        updates = _announcement_updates(payload)
+        if not updates:
+            return (
+                {
+                    "agent": "action",
+                    "status": "cancelled",
+                    "tool": tool,
+                    "message": "No announcement values were changed. Nothing was updated.",
+                },
+                None,
+                sanitized,
+            )
+        payload["updates"] = updates
+    if tool == "update_policy" and all(
+        payload.get(field) == payload.get(f"_original_{field.removeprefix('policy_')}")
+        for field in ("policy_title", "policy_category")
+    ):
+        return (
+            {
+                "agent": "action",
+                "status": "cancelled",
+                "tool": tool,
+                "message": "No policy values were changed. Nothing was updated.",
+            },
+            None,
+            sanitized,
+        )
 
     if tool == "apply_leave":
         preview = await preview_leave_application(

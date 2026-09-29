@@ -8,8 +8,8 @@ from app.agent.nodes.action_agent import (
     _pending_expired,
     select_action_tool,
 )
-from app.agent.nodes.query_rewriter import correct_common_misspellings
 from app.agent.nodes.database_agent import select_database_tool
+from app.agent.nodes.query_rewriter import correct_common_misspellings
 from app.agent.supervisor import supervisor_node
 from app.models.role import RoleEnum
 
@@ -27,6 +27,7 @@ def test_create_employee_never_collects_a_password_from_chat() -> None:
         "last_name",
         "email",
         "date_of_joining",
+        "role",
     ]
     assert "password" not in TOOL_WORKFLOWS["create_employee"].required_slots
 
@@ -62,6 +63,7 @@ def test_admin_management_commands_select_the_expected_tools() -> None:
         "create holiday Diwali": "create_holiday",
         "delete holiday": "delete_holiday",
         "add policy": "upload_policy",
+        "edit policy": "update_policy",
         "remove policy": "delete_policy",
         "approve leave": "approve_leave",
         "reject leave": "reject_leave",
@@ -78,6 +80,14 @@ def test_admin_read_commands_select_management_lists() -> None:
     assert select_database_tool("show departments") == "list_departments"
     assert select_database_tool("show designations") == "list_designations"
     assert select_database_tool("show users") == "list_users"
+    assert select_database_tool("show employee") == "list_employees"
+    assert select_database_tool("show employee Rahul Kumar") == "get_employee_details"
+    assert select_database_tool("get employee EMP-004 details") == "get_employee_details"
+    assert select_database_tool("find employee rahul@example.com") == "get_employee_details"
+    assert select_database_tool("tell me about employee Rahul") == "get_employee_details"
+    assert select_database_tool("show Rahul details") == "get_employee_details"
+    assert select_database_tool("show details for EMP-004") == "get_employee_details"
+    assert select_database_tool("show leave details") != "get_employee_details"
 
 
 def test_admin_command_typos_are_normalized_before_routing() -> None:

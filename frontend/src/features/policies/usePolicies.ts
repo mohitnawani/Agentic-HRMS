@@ -22,3 +22,12 @@ export const useDeletePolicy = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["policies"] }),
   });
 };
+
+export const useUpdatePolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { title: string; category: string } }) =>
+      api.updatePolicy(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["policies"] }),
+  });
+};

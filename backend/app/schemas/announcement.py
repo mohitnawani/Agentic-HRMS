@@ -10,6 +10,7 @@ from app.schemas.common import StrippedStr
 class AnnouncementCreate(BaseModel):
     title: Annotated[StrippedStr, Field(min_length=1, max_length=255)]
     body: Annotated[StrippedStr, Field(min_length=1, max_length=2000)]
+    is_active: bool = True
 
 
 class AnnouncementUpdate(BaseModel):

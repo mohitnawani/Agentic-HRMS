@@ -189,6 +189,17 @@ async def get_policy(db: AsyncSession, doc_id: uuid.UUID) -> PolicyDocument:
     return doc
 
 
+async def update_policy(
+    db: AsyncSession, doc_id: uuid.UUID, *, title: str, category: str
+) -> PolicyDocument:
+    document = await get_policy(db, doc_id)
+    document.title = title.strip()
+    document.category = category.strip()
+    await db.commit()
+    await db.refresh(document)
+    return document
+
+
 def _cloudinary_public_id(file_url: str) -> str:
     """Recover the raw-resource public ID stored in a Cloudinary delivery URL."""
     parsed = urlparse(file_url)

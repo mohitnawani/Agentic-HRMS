@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas.common import StrippedStr
+
+
+class PolicyDocumentUpdate(BaseModel):
+    title: StrippedStr = Field(min_length=1, max_length=255)
+    category: StrippedStr = Field(min_length=1, max_length=100)
 
 
 class PolicyDocumentRead(BaseModel):

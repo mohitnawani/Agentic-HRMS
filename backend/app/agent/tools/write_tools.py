@@ -58,6 +58,7 @@ ACTION_PERMISSIONS = {
     "create_holiday": "holiday:write",
     "delete_holiday": "holiday:write",
     "upload_policy": "policy:write",
+    "update_policy": "policy:write",
     "delete_policy": "policy:write",
     "apply_leave": "leave:apply",
     "cancel_leave": "leave:apply",
@@ -507,4 +508,27 @@ async def delete_policy(
         "document_id": str(document.id),
         "title": document.title,
         "deleted": True,
+    }
+
+
+async def update_policy(
+    state: AgentState,
+    db: AsyncSession,
+    document_id: uuid.UUID,
+    *,
+    title: str,
+    category: str,
+) -> dict[str, object]:
+    await authorize_write_tool(state, db, "update_policy")
+    try:
+        document = await policy_service.update_policy(
+            db, document_id, title=title, category=category
+        )
+    except HTTPException as exc:
+        raise _translate_service_error(exc) from exc
+    return {
+        "document_id": str(document.id),
+        "title": document.title,
+        "category": document.category,
+        "updated": True,
     }

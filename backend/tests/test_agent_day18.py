@@ -5,13 +5,18 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.nodes.action_agent import run_action, select_action_tool
+from app.agent.nodes.action_agent import handle_action, run_action, select_action_tool
 from app.agent.state import AgentState
-from app.agent.tools.write_tools import WriteToolAccessDenied, delete_employee, update_announcement
+from app.agent.tools.write_tools import (
+    WriteToolAccessDenied,
+    delete_employee,
+    update_announcement,
+)
 from app.db.session import async_session
 from app.models.announcement import Announcement
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.policy_document import PolicyDocument
 from app.models.role import RoleEnum
 from app.models.user import User
 
@@ -65,8 +70,8 @@ async def test_employee_delete_is_denied_without_database_write():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", [RoleEnum.HR, RoleEnum.ADMIN])
-async def test_hr_and_admin_can_delete_employee(role):
+@pytest.mark.parametrize("role", [RoleEnum.ADMIN])
+async def test_admin_can_delete_employee(role):
     async with async_session() as db:
         actor, actor_employee = await create_actor(db, role, f"{role.value}_actor")
         target_user, target = await create_actor(
@@ -217,6 +222,213 @@ async def test_hr_can_update_announcement_through_assistant():
 
 
 @pytest.mark.asyncio
+async def test_announcement_edit_collects_each_field_with_current_values():
+    async with async_session() as db:
+        actor, actor_employee = await create_actor(db, RoleEnum.HR, "guided_ann_hr")
+        announcement = Announcement(
+            title="Office Update",
+            body="The office closes at 6 PM.",
+            created_by=actor.id,
+            is_active=True,
+        )
+        db.add(announcement)
+        await db.commit()
+
+        result, pending, _ = await handle_action(
+            state_for(actor, "Edit announcement"), db
+        )
+        assert result["data"]["missing_field"] == "announcement_id"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(
+                    actor,
+                    str(announcement.id),
+                    announcement_id=str(announcement.id),
+                ),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "announcement_title"
+        assert result["data"]["current_value"] == "Office Update"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, "keep", announcement_title="keep"),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "announcement_body"
+        assert result["data"]["current_value"] == "The office closes at 6 PM."
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(
+                    actor,
+                    "The office closes at 7 PM.",
+                    announcement_body="The office closes at 7 PM.",
+                ),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "announcement_is_active"
+        assert result["data"]["current_value"] is True
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, "false", announcement_is_active="false"),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["status"] == "confirmation_required"
+        assert pending["parameters"]["updates"] == {
+            "body": "The office closes at 7 PM.",
+            "is_active": False,
+        }
+
+        result, pending, _ = await handle_action(
+            {**state_for(actor, "confirm"), "pending_action": pending}, db
+        )
+        await db.refresh(announcement)
+        assert result["status"] == "success"
+        assert pending is None
+        assert announcement.title == "Office Update"
+        assert announcement.body == "The office closes at 7 PM."
+        assert announcement.is_active is False
+        await db.delete(announcement)
+        await db.delete(actor_employee)
+        await db.delete(actor)
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_announcement_creation_collects_fields_one_at_a_time():
+    async with async_session() as db:
+        actor, actor_employee = await create_actor(
+            db, RoleEnum.ADMIN, "guided_ann_admin"
+        )
+
+        result, pending, _ = await handle_action(
+            state_for(actor, "Create announcement"), db
+        )
+        assert result["data"]["missing_field"] == "title"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, "Office Hours", title="Office Hours"),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "body"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(
+                    actor,
+                    "Office closes at 7 PM",
+                    body="Office closes at 7 PM",
+                ),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "announcement_is_active"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, "false", announcement_is_active="false"),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["status"] == "confirmation_required"
+        assert "Visibility: Hidden" in result["message"]
+
+        result, pending, _ = await handle_action(
+            {**state_for(actor, "confirm"), "pending_action": pending}, db
+        )
+        created = await db.get(
+            Announcement, uuid.UUID(result["data"]["announcement_id"])
+        )
+        assert created is not None
+        assert created.title == "Office Hours"
+        assert created.body == "Office closes at 7 PM"
+        assert created.is_active is False
+        assert pending is None
+
+        await db.delete(created)
+        await db.delete(actor_employee)
+        await db.delete(actor)
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_policy_edit_prefills_metadata_and_confirms_changes():
+    async with async_session() as db:
+        actor, actor_employee = await create_actor(db, RoleEnum.HR, "policy_edit_hr")
+        document = PolicyDocument(
+            title="Old Leave Policy",
+            category="leave",
+            file_path="https://example.invalid/policy.pdf",
+            uploaded_by=actor.id,
+            version=1,
+        )
+        db.add(document)
+        await db.commit()
+
+        result, pending, _ = await handle_action(state_for(actor, "Edit policy"), db)
+        assert result["data"]["missing_field"] == "document_id"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, str(document.id), document_id=str(document.id)),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "policy_title"
+        assert result["data"]["current_value"] == "Old Leave Policy"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, "Leave Policy 2027", policy_title="Leave Policy 2027"),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["data"]["missing_field"] == "policy_category"
+        assert result["data"]["current_value"] == "leave"
+
+        result, pending, _ = await handle_action(
+            {
+                **state_for(actor, "keep", policy_category="keep"),
+                "pending_action": pending,
+            },
+            db,
+        )
+        assert result["status"] == "confirmation_required"
+
+        result, pending, _ = await handle_action(
+            {**state_for(actor, "confirm"), "pending_action": pending}, db
+        )
+        await db.refresh(document)
+        assert result["status"] == "success"
+        assert pending is None
+        assert document.title == "Leave Policy 2027"
+        assert document.category == "leave"
+
+        await db.delete(document)
+        await db.delete(actor_employee)
+        await db.delete(actor)
+        await db.commit()
+
+
+@pytest.mark.asyncio
 async def test_admin_can_toggle_announcement_visibility_through_assistant():
     async with async_session() as db:
         actor, actor_employee = await create_actor(db, RoleEnum.ADMIN, "ann_admin")
@@ -252,7 +464,9 @@ async def test_admin_can_toggle_announcement_visibility_through_assistant():
 @pytest.mark.asyncio
 async def test_employee_update_announcement_is_denied_without_database_write():
     async with async_session() as db:
-        actor, actor_employee = await create_actor(db, RoleEnum.EMPLOYEE, "ann_denied")
+        actor, _actor_employee = await create_actor(
+            db, RoleEnum.EMPLOYEE, "ann_denied"
+        )
         announcement = Announcement(
             title="Secret Meeting",
             body="Original",

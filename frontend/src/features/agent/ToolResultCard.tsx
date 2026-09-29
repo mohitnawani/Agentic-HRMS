@@ -21,7 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmployee, useEmployees } from "@/features/employees/useEmployees";
-import { useAnnouncements } from "@/features/announcements/useAnnouncements";
 import { usePolicies, useUploadPolicy } from "@/features/policies/usePolicies";
 import {
   useMyRequests,
@@ -63,6 +62,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_holiday: "Create holiday",
   delete_holiday: "Delete holiday",
   upload_policy: "Upload policy",
+  update_policy: "Update policy",
   delete_policy: "Delete policy",
   apply_leave: "Apply for leave",
   correct_attendance: "Correct attendance",
@@ -86,8 +86,13 @@ const FIELD_LABELS: Record<string, string> = {
   name: "Department name",
   title: "Title",
   body: "Announcement message",
+  announcement_title: "Announcement title",
+  announcement_body: "Announcement message",
+  announcement_is_active: "Announcement visibility",
   category: "Policy category",
   policy_file: "Policy PDF",
+  policy_title: "Policy title",
+  policy_category: "Policy category",
   status: "Attendance status",
   correction_reason: "Correction reason",
   leave_type_name: "Leave type name",
@@ -103,6 +108,7 @@ const DATE_FIELDS = new Set([
 ]);
 
 const UPDATE_FIELDS = [
+  { name: "role", label: "Account role" },
   { name: "first_name", label: "First name" },
   { name: "last_name", label: "Last name" },
   { name: "phone", label: "Phone" },
@@ -211,6 +217,7 @@ function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }
       employee.full_name,
       employee.email,
       employee.employee_code,
+      employee.phone,
       employee.department,
       employee.designation,
     ].some((value) => String(value ?? "").toLowerCase().includes(normalizedSearch)),
@@ -228,7 +235,7 @@ function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }
           setSearch(event.target.value);
           setPage(1);
         }}
-        placeholder="Search employees by name, email, code, or department"
+        placeholder="Search by name, email, phone, code, or department"
         aria-label="Search employee results"
       />
       <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -248,6 +255,9 @@ function EmployeeResults({ employees }: { employees: Record<string, unknown>[] }
             <div className="min-w-0">
               <p className="truncate font-medium">{String(employee.full_name ?? "Employee")}</p>
               <p className="truncate text-muted-foreground">{String(employee.email ?? "")}</p>
+              {Boolean(employee.phone) && (
+                <p className="truncate text-muted-foreground">{String(employee.phone)}</p>
+              )}
             </div>
             <div className="mt-1 shrink-0 text-muted-foreground sm:mt-0 sm:text-right">
               {Boolean(employee.employee_code) && <p>{String(employee.employee_code)}</p>}
@@ -342,96 +352,33 @@ function EmployeeUpdateForm({
         {UPDATE_FIELDS.map((field) => (
           <label key={field.name} className={field.name === "address" ? "sm:col-span-2" : ""}>
             <span className="mb-1 block text-xs text-muted-foreground">{field.label}</span>
-            <Input
-              type={"type" in field ? field.type : "text"}
-              value={values[field.name] ?? ""}
-              onChange={(event) =>
-                setChanges((current) => ({ ...current, [field.name]: event.target.value }))
-              }
-              disabled={disabled || isLoading || isError}
-              required={["first_name", "last_name"].includes(field.name)}
-            />
+            {field.name === "role" ? (
+              <Select
+                value={values.role ?? "employee"}
+                onValueChange={(selectedRole) =>
+                  setChanges((current) => ({ ...current, role: selectedRole }))
+                }
+                disabled={disabled || isLoading || isError}
+              >
+                <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Employee</SelectItem>
+                  <SelectItem value="hr">HR</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                type={"type" in field ? field.type : "text"}
+                value={values[field.name] ?? ""}
+                onChange={(event) =>
+                  setChanges((current) => ({ ...current, [field.name]: event.target.value }))
+                }
+                disabled={disabled || isLoading || isError}
+                required={["first_name", "last_name"].includes(field.name)}
+              />
+            )}
           </label>
         ))}
-      </div>
-      <Button
-        size="sm"
-        type="submit"
-        disabled={disabled || isLoading || isError || !Object.keys(updates).length}
-      >
-        Save changes
-      </Button>
-    </form>
-  );
-}
-
-function AnnouncementUpdateForm({
-  announcementId,
-  disabled,
-  onRespond,
-}: {
-  announcementId: string;
-  disabled: boolean;
-  onRespond: Respond;
-}) {
-  const [title, setTitle] = useState<string | null>(null);
-  const [body, setBody] = useState<string | null>(null);
-  const [isActive, setIsActive] = useState<boolean | null>(null);
-  const { data: announcements, isLoading, isError } = useAnnouncements();
-  const current = announcements?.find((item) => item.id === announcementId);
-
-  const updates: Record<string, string | boolean> = {};
-  if (title !== null && title.trim() !== (current?.title ?? "")) updates.title = title.trim();
-  if (body !== null && body.trim() !== (current?.body ?? "")) updates.body = body.trim();
-  if (isActive !== null && isActive !== current?.is_active) updates.is_active = isActive;
-
-  const submitUpdates = (event: FormEvent) => {
-    event.preventDefault();
-    const fields = Object.keys(updates);
-    if (!fields.length) return;
-    onRespond(
-      "Update selected announcement",
-      { updates },
-      `Update announcement fields: ${fields.join(", ")}`,
-    );
-  };
-
-  return (
-    <form onSubmit={submitUpdates} className="mt-3 space-y-3 border-t border-warning/20 pt-3">
-      <div>
-        <p className="text-xs font-medium text-primary">Announcement changes</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Existing values are prefilled. Change any fields, then save them together.
-        </p>
-      </div>
-      {isLoading && <p className="text-xs text-muted-foreground">Loading announcement details...</p>}
-      {isError && <p className="text-xs text-destructive">Could not load announcement details.</p>}
-      <div className="space-y-2">
-        <label className="block">
-          <span className="mb-1 block text-xs text-muted-foreground">Title</span>
-          <Input
-            value={title ?? current?.title ?? ""}
-            onChange={(event) => setTitle(event.target.value)}
-            disabled={disabled || isLoading || isError}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs text-muted-foreground">Message</span>
-          <Textarea
-            value={body ?? current?.body ?? ""}
-            onChange={(event) => setBody(event.target.value)}
-            disabled={disabled || isLoading || isError}
-          />
-        </label>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={isActive ?? current?.is_active ?? true}
-            onChange={(event) => setIsActive(event.target.checked)}
-            disabled={disabled || isLoading || isError}
-          />
-          Visible to all users
-        </label>
       </div>
       <Button
         size="sm"
@@ -618,9 +565,11 @@ function PolicyUploader({
 function PolicySelector({
   disabled,
   onRespond,
+  action = "delete",
 }: {
   disabled: boolean;
   onRespond: Respond;
+  action?: "delete" | "edit";
 }) {
   const { data: policies, isLoading, isError } = usePolicies();
   const [documentId, setDocumentId] = useState("");
@@ -645,7 +594,9 @@ function PolicySelector({
 
   return (
     <form onSubmit={submitPolicy} className="mt-3 space-y-2 border-t border-warning/20 pt-3">
-      <label className="block text-xs font-medium text-primary">Select policy to delete</label>
+      <label className="block text-xs font-medium text-primary">
+        Select policy to {action}
+      </label>
       <Input
         value={search}
         onChange={(event) => setSearch(event.target.value)}
@@ -691,10 +642,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function titleFor(result: AgentToolResult) {
-  if (result.tool) return TOOL_LABELS[result.tool] ?? result.tool.replaceAll("_", " ");
+  if (result.tool && result.tool !== "unknown") {
+    return TOOL_LABELS[result.tool] ?? result.tool.replaceAll("_", " ");
+  }
   if (result.agent === "database") return "HRMS data";
   if (result.agent === "rag") return "Policy search";
-  return "HR action";
+  return "Assistant request";
 }
 
 interface ToolResultCardProps {
@@ -710,7 +663,10 @@ export default function ToolResultCard({
   disabled = false,
   onRespond,
 }: ToolResultCardProps) {
-  const [value, setValue] = useState("");
+  const initialCurrentValue = isRecord(result.data) ? result.data.current_value : undefined;
+  const [value, setValue] = useState(
+    typeof initialCurrentValue === "string" ? initialCurrentValue : "",
+  );
   const denied = result.status === "denied";
   const failed = result.status === "error";
   const waiting = ["needs_input", "confirmation_required"].includes(result.status);
@@ -739,7 +695,7 @@ export default function ToolResultCard({
   const details = isRecord(data)
     ? Object.entries(data).filter(
         ([key, item]) =>
-          !["stage", "missing_field"].includes(key) &&
+          !["stage", "missing_field", "current_value", "allow_keep"].includes(key) &&
           ["string", "number", "boolean"].includes(typeof item),
       )
     : [];
@@ -751,6 +707,7 @@ export default function ToolResultCard({
     isRecord(data) && isRecord(data.parameters) ? data.parameters : {};
   const minimumDate =
     isRecord(data) && typeof data.min_date === "string" ? data.min_date : undefined;
+  const currentValue = isRecord(data) ? data.current_value : undefined;
   const suggestions =
     isRecord(data) && Array.isArray(data.suggestions)
       ? data.suggestions.filter(isRecord)
@@ -844,18 +801,10 @@ export default function ToolResultCard({
       {interactive &&
         result.status === "needs_input" &&
         missingField === "document_id" &&
-        result.tool === "delete_policy" &&
+        ["delete_policy", "update_policy"].includes(result.tool ?? "") &&
         onRespond && (
-          <PolicySelector disabled={disabled} onRespond={onRespond} />
-        )}
-
-      {interactive &&
-        result.status === "needs_input" &&
-        missingField === "updates" &&
-        result.tool === "update_announcement" &&
-        onRespond && (
-          <AnnouncementUpdateForm
-            announcementId={String(pendingParameters.announcement_id ?? "")}
+          <PolicySelector
+            action={result.tool === "update_policy" ? "edit" : "delete"}
             disabled={disabled}
             onRespond={onRespond}
           />
@@ -940,12 +889,22 @@ export default function ToolResultCard({
           <label className="block text-xs font-medium text-primary">
             {FIELD_LABELS[missingField] ?? "Required information"}
           </label>
+          {(missingField.startsWith("announcement_") || missingField.startsWith("policy_")) && currentValue !== undefined && (
+            <div className="rounded-lg border border-border bg-secondary/60 px-3 py-2 text-xs">
+              <span className="font-medium text-primary">Current value: </span>
+              <span className="whitespace-pre-wrap text-muted-foreground">
+                {typeof currentValue === "boolean"
+                  ? currentValue ? "Visible" : "Hidden"
+                  : String(currentValue)}
+              </span>
+            </div>
+          )}
           <div className="flex gap-2">
-            {missingField === "body" ? (
+            {["body", "announcement_body"].includes(missingField) ? (
               <Textarea
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
-                placeholder="Enter the announcement message"
+                placeholder="Enter a new message or type keep"
                 disabled={disabled}
                 required
               />
@@ -1128,7 +1087,7 @@ export default function ToolResultCard({
 
       {!balances.length && !employees.length && !policies.length && !policySummaries.length && !auditRecords.length && !leaveRequests.length && !holidays.length && !announcements.length && !managementRecords.length && details.length > 0 && (
         <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-          {details.slice(0, 8).map(([key, item]) => (
+          {details.map(([key, item]) => (
             <div key={key} className="flex justify-between gap-2 border-b border-border/60 py-1">
               <dt className="capitalize text-muted-foreground">{key.replaceAll("_", " ")}</dt>
               <dd className="truncate font-medium">{String(item)}</dd>

@@ -17,13 +17,14 @@ import { cn } from "@/lib/utils";
 
 const EDIT_STEPS = ["Work Profile", "Personal Info", "Banking", "Documents"] as const;
 const EDIT_STEP_FIELDS: Record<number, (keyof EditValues)[]> = {
-  0: ["department_id", "designation_id", "date_of_joining", "employee_code"],
+  0: ["department_id", "designation_id", "date_of_joining", "employee_code", "role"],
   1: ["first_name", "last_name", "phone", "emergency_contact", "date_of_birth", "gender", "address", "city", "photo"],
   2: ["bank_name", "account_number", "ifsc_code"],
   3: ["id_proof_type", "id_proof_number"],
 };
 
 interface EditValues {
+  role: "hr" | "employee";
   first_name: string; last_name: string; phone: string;
   date_of_joining: string; department_id: string; designation_id: string; photo?: FileList;
   employee_code: string; date_of_birth: string; gender: string;
@@ -33,6 +34,7 @@ interface EditValues {
 }
 
 const toEditValues = (e: {
+  role: string;
   first_name: string; last_name: string; phone: string | null;
   date_of_joining: string; department_id: string | null; designation_id: string | null;
   employee_code: string | null; date_of_birth: string | null; gender: string | null;
@@ -40,6 +42,7 @@ const toEditValues = (e: {
   bank_name: string | null; account_number: string | null; ifsc_code: string | null;
   id_proof_type: string | null; id_proof_number: string | null;
 }): EditValues => ({
+  role: e.role === "hr" ? "hr" : "employee",
   first_name: e.first_name,
   last_name: e.last_name,
   phone: e.phone ?? "",
@@ -191,6 +194,25 @@ export default function EmployeeDetailPage() {
                 <div className="space-y-1">
                   <Label>Employee Code</Label>
                   <Input {...register("employee_code")} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Account Role</Label>
+                  <Controller
+                    control={control}
+                    name="role"
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="employee">Employee</SelectItem>
+                          <SelectItem value="hr">HR</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Admin is a management-only account and cannot be assigned here.
+                  </p>
                 </div>
               </>
             )}

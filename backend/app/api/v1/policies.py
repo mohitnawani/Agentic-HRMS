@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.policy_document import PolicyDocumentRead
+from app.schemas.policy_document import PolicyDocumentRead, PolicyDocumentUpdate
 from app.services import policy_service
 
 router = APIRouter(prefix="/policies", tags=["policies"])
@@ -66,6 +66,21 @@ async def list_policies(
     db: Annotated[AsyncSession, Depends(get_db)], category: str | None = None
 ):
     return await policy_service.list_policies(db, category)
+
+
+@router.patch(
+    "/{doc_id}",
+    response_model=PolicyDocumentRead,
+    dependencies=[Depends(require_permission("policy:write"))],
+)
+async def update_policy(
+    doc_id: uuid.UUID,
+    data: PolicyDocumentUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    return await policy_service.update_policy(
+        db, doc_id, title=data.title, category=data.category
+    )
 
 
 @router.delete(

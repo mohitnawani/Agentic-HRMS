@@ -31,3 +31,6 @@ export const downloadPolicyFile = (id: string) =>
 
 export const deletePolicy = (id: string) =>
   apiClient.delete(`/policies/${id}`);
+
+export const updatePolicy = (id: string, data: { title: string; category: string }) =>
+  apiClient.patch<PolicyDocument>(`/policies/${id}`, data).then((r) => r.data);

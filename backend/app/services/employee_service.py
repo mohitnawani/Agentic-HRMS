@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
@@ -39,16 +39,19 @@ def _ensure_designation_in_department(
     designation: Designation | None, department_id: uuid.UUID | None
 ) -> None:
     """A designation always belongs to exactly one department."""
-    if designation is not None and department_id is not None:
-        if designation.department_id != department_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Designation does not belong to the selected department",
-            )
+    if (
+        designation is not None
+        and department_id is not None
+        and designation.department_id != department_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Designation does not belong to the selected department",
+        )
 
 
 def _validate_dates(date_of_birth: date | None, date_of_joining: date | None) -> None:
-    today = date.today()
+    today = datetime.now(UTC).date()
     if date_of_birth is not None and date_of_birth > today:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -172,12 +175,28 @@ async def update_employee(
     db: AsyncSession, employee_id: uuid.UUID, data: EmployeeUpdate, actor: User
 ) -> Employee:
     employee = await get_employee(db, employee_id)
-    if actor.role == RoleEnum.HR:
-        user_result = await db.execute(select(User).where(User.id == employee.user_id))
-        target = user_result.scalar_one_or_none()
-        if target is None or target.role == RoleEnum.ADMIN:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR cannot edit admin accounts")
-    for field, value in data.model_dump(exclude_unset=True).items():
+    user_result = await db.execute(select(User).where(User.id == employee.user_id))
+    target = user_result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee user account not found",
+        )
+    if actor.role == RoleEnum.HR and target.role == RoleEnum.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="HR cannot edit admin accounts",
+        )
+    updates = data.model_dump(exclude_unset=True)
+    requested_role = updates.pop("role", None)
+    if requested_role == RoleEnum.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin is a management-only role and cannot be assigned to an employee profile",
+        )
+    if requested_role is not None:
+        target.role = requested_role
+    for field, value in updates.items():
         setattr(employee, field, value)
     await _ensure_department(db, employee.department_id)
     designation = await _ensure_designation(db, employee.designation_id)

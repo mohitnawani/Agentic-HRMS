@@ -4,6 +4,7 @@ import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppSelector } from "@/store/hooks";
+import type { Role } from "@/store/authSlice";
 import ChatMessage from "./ChatMessage";
 import { getAgentConversation, streamAgentChat } from "./agentApi";
 import type {
@@ -12,12 +13,14 @@ import type {
   ChatMessageModel,
 } from "./agentTypes";
 
-const WELCOME: ChatMessageModel = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Hello! I can help with company policies, your HR data, and authorized HR actions. What would you like to do?",
-};
+function welcomeForRole(role: Role | null): ChatMessageModel {
+  const content = role === "admin"
+    ? "Hello! I’m your Admin Assistant. I can help manage employees, leave approvals, attendance, policies, announcements, holidays, departments, designations, and users."
+    : role === "hr"
+      ? "Hello! I’m your HR Assistant. I can help manage employees, employee leave, attendance, policies, and announcements."
+      : "Hello! I’m your Employee Assistant. I can help with your profile, leave, attendance, holidays, announcements, and company policies.";
+  return { id: "welcome", role: "assistant", content };
+}
 
 const ROLE_SUGGESTIONS = {
   employee: ["How many leaves do I have left?", "What's the work-from-home policy?"],
@@ -27,7 +30,12 @@ const ROLE_SUGGESTIONS = {
     "Upload a policy",
     "Create an announcement",
   ],
-  admin: ["Show all employees", "Create a department named Product"],
+  admin: [
+    "Show all employees",
+    "Show pending leaves",
+    "Create a department named Product",
+    "How many holidays are there?",
+  ],
 };
 
 const ASSISTANT_TITLES = {
@@ -56,6 +64,7 @@ const FLOW_LABELS: Record<string, string> = {
   reject_leave: "Reject leave",
   update_employee: "Update employee",
   upload_policy: "Upload policy",
+  update_policy: "Update policy",
 };
 
 export default function ChatPage() {
@@ -64,7 +73,7 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(() =>
     sessionStorage.getItem(storageKey),
   );
-  const [messages, setMessages] = useState<ChatMessageModel[]>([WELCOME]);
+  const [messages, setMessages] = useState<ChatMessageModel[]>(() => [welcomeForRole(role)]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isRestoring, setIsRestoring] = useState(Boolean(conversationId));
@@ -121,7 +130,8 @@ export default function ChatPage() {
           };
           last.tools = [tool];
         }
-        setMessages(restored.length ? [WELCOME, ...restored] : [WELCOME]);
+        const welcome = welcomeForRole(role);
+        setMessages(restored.length ? [welcome, ...restored] : [welcome]);
       })
       .catch(() => {
         sessionStorage.removeItem(storageKey);
@@ -133,7 +143,7 @@ export default function ChatPage() {
     return () => {
       active = false;
     };
-  }, [storageKey]);
+  }, [role, storageKey]);
 
   const updateAssistant = (
     id: string,
@@ -239,7 +249,7 @@ export default function ChatPage() {
     abortRef.current?.abort();
     sessionStorage.removeItem(storageKey);
     setConversationId(null);
-    setMessages([WELCOME]);
+    setMessages([welcomeForRole(role)]);
     setPendingInteraction(null);
     setStatus("");
     setIsRestoring(false);
@@ -249,7 +259,7 @@ export default function ChatPage() {
     <div className="mx-auto flex h-[calc(100svh-4rem)] max-w-6xl flex-col">
       <PageHeader
         title={assistantTitle}
-        description="Ask about policies, HR data, or actions available to your role"
+        description={`Ask the ${assistantTitle} about information and actions available to your role`}
         actions={
           <Button
             variant="outline"

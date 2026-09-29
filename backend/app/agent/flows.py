@@ -24,6 +24,7 @@ WorkflowIntent = Literal[
     "CREATE_HOLIDAY",
     "DELETE_HOLIDAY",
     "UPLOAD_POLICY",
+    "UPDATE_POLICY",
     "DELETE_POLICY",
     "APPLY_LEAVE",
     "CANCEL_LEAVE",
@@ -45,7 +46,7 @@ WORKFLOWS: dict[WorkflowIntent, WorkflowSpec] = {
     "CREATE_EMPLOYEE": WorkflowSpec(
         "create_employee",
         "employee:create",
-        ("first_name", "last_name", "email", "date_of_joining"),
+        ("first_name", "last_name", "email", "date_of_joining", "role"),
     ),
     "UPDATE_EMPLOYEE": WorkflowSpec(
         "update_employee", "employee:update", ("employee_id", "updates")
@@ -75,10 +76,19 @@ WORKFLOWS: dict[WorkflowIntent, WorkflowSpec] = {
         "delete_designation", "designation:write", ("designation_id",), "strong"
     ),
     "CREATE_ANNOUNCEMENT": WorkflowSpec(
-        "create_announcement", "announcement:write", ("title", "body")
+        "create_announcement",
+        "announcement:write",
+        ("title", "body", "announcement_is_active"),
     ),
     "UPDATE_ANNOUNCEMENT": WorkflowSpec(
-        "update_announcement", "announcement:write", ("announcement_id", "updates")
+        "update_announcement",
+        "announcement:write",
+        (
+            "announcement_id",
+            "announcement_title",
+            "announcement_body",
+            "announcement_is_active",
+        ),
     ),
     "DELETE_ANNOUNCEMENT": WorkflowSpec(
         "delete_announcement", "announcement:write", ("announcement_id",), "strong"
@@ -93,6 +103,11 @@ WORKFLOWS: dict[WorkflowIntent, WorkflowSpec] = {
         "upload_policy",
         "policy:write",
         ("title", "category", "policy_file", "document_id"),
+    ),
+    "UPDATE_POLICY": WorkflowSpec(
+        "update_policy",
+        "policy:write",
+        ("document_id", "policy_title", "policy_category"),
     ),
     "DELETE_POLICY": WorkflowSpec(
         "delete_policy", "policy:write", ("document_id",), "strong"

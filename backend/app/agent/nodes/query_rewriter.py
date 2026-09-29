@@ -30,6 +30,8 @@ COMMON_CORRECTIONS = {
     "attendence": "attendance",
     "attence": "attendance",
     "attandance": "attendance",
+    "atttencee": "attendance",
+    "attandence": "attendance",
     "balnce": "balance",
     "chek": "check",
     "delte": "delete",

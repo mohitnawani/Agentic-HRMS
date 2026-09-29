@@ -23,6 +23,8 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "Employees", path: "/hr/employees" },
     { label: "Attendance", path: "/hr/attendance" },
     { label: "Leave Approvals", path: "/hr/leave" },
+    { label: "Departments", path: "/hr/departments" },
+    { label: "Designations", path: "/hr/designations" },
     { label: "My Leave", path: "/hr/my-leave" },
     { label: "Holidays", path: "/hr/holidays" },
     { label: "Policies", path: "/hr/policies" },

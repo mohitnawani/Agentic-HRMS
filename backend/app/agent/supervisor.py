@@ -24,6 +24,13 @@ DATABASE_PATTERNS = (
     r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ie|ies)\b",
     r"\b(leave balance|leave history|attendance|employee details)\b",
     r"\b(list|show|find|get)\b.*\b(employee|employees|department|attendance)\b",
+    r"\b(view|show|get|find)\b.*\bemployees?\b.*\b(details?|profile|information)\b",
+    r"\b(tell|give)\b.*\b(details?|information|about)\b.*\bemployees?\b",
+    (
+        r"^(?!.*\b(policy|policies|leave|attendance|holiday|department|designation|"
+        r"announcement|user|account)\b).*\b(show|view|find|get|tell|give)\b.*"
+        r"\b(details?|profile|information|about)\b"
+    ),
     r"\b(how many|number of|total|count|list|show|get)\b.*\b(departments?|designations?|users?|employees?)\b",
     r"\b(show|open|view)\b.*\bdashboard\b",
     r"\borg(ani[sz]ation)?\b.*\b(stats|statistics|overview|summary)\b",

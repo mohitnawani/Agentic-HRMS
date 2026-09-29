@@ -11,11 +11,14 @@ import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import ConfirmActionDialog from "@/components/ConfirmActionDialog";
+import { useAppSelector } from "@/store/hooks";
 import { useDepartments } from "@/features/departments/useDepartments";
 import { useDesignations, useCreateDesignation, useDeleteDesignation } from "./useDesignations";
 import type { Designation } from "./designationApi";
 
 export default function DesignationPage() {
+  const role = useAppSelector((s) => s.auth.role);
+  const canWrite = role === "admin";
   const { data: designations, isLoading } = useDesignations();
   const { data: departments } = useDepartments();
   const createDesignation = useCreateDesignation();
@@ -43,7 +46,7 @@ export default function DesignationPage() {
     <div>
       <PageHeader
         title="Designations"
-        actions={
+        actions={canWrite && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>Add Designation</Button></DialogTrigger>
             <DialogContent>
@@ -75,7 +78,7 @@ export default function DesignationPage() {
               </form>
             </DialogContent>
           </Dialog>
-        }
+        )}
       />
       <DataTable
         rowKey={(d: Designation) => d.id}
@@ -85,14 +88,16 @@ export default function DesignationPage() {
         columns={[
           { header: "Title", render: (d) => d.title },
           { header: "Department", render: (d) => d.department_name ?? "—" },
-          {
-            header: "Actions",
-            render: (d) => (
-              <Button size="sm" variant="destructive" onClick={() => setToDelete(d)}>
-                Delete
-              </Button>
-            ),
-          },
+          ...(canWrite
+            ? [{
+                header: "Actions",
+                render: (d: Designation) => (
+                  <Button size="sm" variant="destructive" onClick={() => setToDelete(d)}>
+                    Delete
+                  </Button>
+                ),
+              }]
+            : []),
         ]}
       />
       <ConfirmActionDialog

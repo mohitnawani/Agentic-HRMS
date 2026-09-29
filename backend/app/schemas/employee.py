@@ -37,6 +37,7 @@ class EmployeeCreate(BaseModel):
 
 
 class EmployeeUpdate(BaseModel):
+    role: RoleEnum | None = None
     first_name: NameT | None = None
     last_name: NameT | None = None
     phone: PhoneT | None = None

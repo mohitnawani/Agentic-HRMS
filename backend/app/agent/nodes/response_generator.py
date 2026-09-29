@@ -9,31 +9,36 @@ from app.models.role import RoleEnum
 def _general_response(state: AgentState) -> str:
     message = " ".join(state["message"].lower().split())
     role = RoleEnum(state["role"])
+    assistant_name = {
+        RoleEnum.ADMIN: "Admin Assistant",
+        RoleEnum.HR: "HR Assistant",
+        RoleEnum.EMPLOYEE: "Employee Assistant",
+    }[role]
     if message in {"yes", "y", "confirm", "no", "n"}:
-        return "There is no action waiting for confirmation. What would you like to do?"
+        return f"{assistant_name}: there is no action waiting for confirmation. What would you like to do?"
     if re.fullmatch(r"(hi|hello|hey|thanks|thank you|bye)[.! ]*", message):
-        return "Hello. Ask what I can do to see the HRMS actions available to your role."
+        return f"Hello. You’re using the {assistant_name}. Ask what I can do for you."
     if re.search(r"\b(help|what can you do|options)\b", message):
         if role == RoleEnum.EMPLOYEE:
-            return (
+            return f"As your {assistant_name}, " + (
                 "I can help with your profile, leave, attendance, holidays, "
                 "announcements, and company policies."
             )
         if role == RoleEnum.HR:
-            return (
+            return f"As your {assistant_name}, " + (
                 "I can help with your own profile, leave and attendance; manage "
                 "employees; review employee leave and attendance; and manage "
                 "announcements and policies."
             )
-        return (
+        return f"As your {assistant_name}, " + (
             "I can manage employees, employee and HR leave approvals, policies, "
             "announcements, holidays, departments, designations, users, "
             "organization statistics, and audit logs."
         )
     if not re.search(r"[a-z0-9]", message):
-        return "I didn't catch that. Ask about leave, attendance, policies, or your profile."
+        return f"The {assistant_name} didn’t catch that request. Please try again."
     return (
-        "I can only help with HRMS topics such as leave, attendance, employees, "
+        f"The {assistant_name} can only help with HRMS topics such as leave, attendance, employees, "
         "announcements, and company policies."
     )
 

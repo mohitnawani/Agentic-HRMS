@@ -169,8 +169,14 @@ async def test_create_employee_collects_missing_fields_across_messages(
         json={"message": "2026-10-01", "conversation_id": str(conversation_id)},
         headers=auth(admin_token),
     )
-    assert "temporary password will be generated" in third.json()["answer"].lower()
-    assert third.json()["tool_results"][-1]["status"] == "confirmation_required"
+    assert "employee or hr" in third.json()["answer"].lower()
+
+    role_step = await client.post(
+        "/api/v1/agent/chat",
+        json={"message": "employee", "conversation_id": str(conversation_id)},
+        headers=auth(admin_token),
+    )
+    assert "temporary password will be generated" in role_step.json()["answer"].lower()
 
     completed = await client.post(
         "/api/v1/agent/chat",

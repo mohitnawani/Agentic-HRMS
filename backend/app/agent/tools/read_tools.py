@@ -123,6 +123,7 @@ async def list_employees(
             "employee_code": employee.employee_code,
             "full_name": f"{employee.first_name} {employee.last_name}",
             "email": email,
+            "phone": employee.phone,
             "department": department,
             "designation": designation,
         }

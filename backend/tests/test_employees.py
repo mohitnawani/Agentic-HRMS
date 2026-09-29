@@ -230,6 +230,36 @@ async def test_hr_edit_rules(client, admin_token):
 
 
 @pytest.mark.asyncio
+async def test_employee_role_can_be_changed_between_employee_and_hr(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    employee_id = await _employee_profile_id(client, admin_token, prefix="roleedit")
+
+    promoted = await client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"role": "hr"},
+        headers=headers,
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["role"] == "hr"
+
+    rejected = await client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"role": "admin"},
+        headers=headers,
+    )
+    assert rejected.status_code == 400
+
+    demoted = await client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"role": "employee"},
+        headers=headers,
+    )
+    assert demoted.status_code == 200, demoted.text
+    assert demoted.json()["role"] == "employee"
+    assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
+
+
+@pytest.mark.asyncio
 async def test_employee_rejects_bad_phone_and_blank_names(client, admin_token):
     h = {"Authorization": f"Bearer {admin_token}"}
     base = {

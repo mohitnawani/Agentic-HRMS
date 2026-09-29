@@ -52,6 +52,8 @@ export const router = createBrowserRouter([
           { path: "/hr/employees/new", element: <EmployeeForm /> },
           { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
           { path: "/hr/attendance", element: <AttendanceCorrectionPage /> },
+          { path: "/hr/departments", element: <DepartmentPage /> },
+          { path: "/hr/designations", element: <DesignationPage /> },
           { path: "/hr/leave", element: <LeaveApprovalsPage /> },
           { path: "/hr/my-leave", element: <LeavePage /> },
           { path: "/hr/holidays", element: <HolidaysPage /> },

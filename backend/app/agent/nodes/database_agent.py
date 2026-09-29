@@ -26,6 +26,7 @@ from app.agent.tools.read_tools import (
     list_pending_leave_requests,
     list_users,
 )
+from app.models.role import RoleEnum
 
 DatabaseToolName = Literal[
     "get_leave_balance",
@@ -50,9 +51,74 @@ PROFILE_QUERY_PATTERN = re.compile(
     r"birth|dob|gender|address|city|emergency|account\s*status)\b"
 )
 
+EMPLOYEE_LOOKUP_STOP_WORDS = {
+    "all",
+    "about",
+    "details",
+    "detail",
+    "code",
+    "email",
+    "employee",
+    "employees",
+    "find",
+    "for",
+    "get",
+    "give",
+    "information",
+    "id",
+    "me",
+    "of",
+    "number",
+    "phone",
+    "profile",
+    "show",
+    "tell",
+    "the",
+    "view",
+}
+
 
 def _is_profile_query(message: str) -> bool:
     return bool(PROFILE_QUERY_PATTERN.search(" ".join(message.lower().split())))
+
+
+def _employee_lookup_terms(message: str) -> set[str]:
+    """Return only words that can identify a requested employee."""
+    normalized = re.sub(r"[^a-z0-9@._-]+", " ", message.lower())
+    return {
+        word
+        for word in normalized.split()
+        if word not in EMPLOYEE_LOOKUP_STOP_WORDS and len(word) > 1
+    }
+
+
+def _is_specific_employee_query(message: str) -> bool:
+    normalized = " ".join(message.lower().split())
+    if _is_profile_query(normalized):
+        return False
+    has_employee_word = bool(re.search(r"\bemployees?\b", normalized))
+    has_detail_word = bool(re.search(r"\b(details?|profile|information)\b", normalized))
+    refers_to_other_domain = bool(
+        re.search(
+            r"\b(policy|policies|leave|attendance|holiday|department|designation|"
+            r"announcement|user|account)\b",
+            normalized,
+        )
+    )
+    if not has_employee_word and (not has_detail_word or refers_to_other_domain):
+        return False
+    return bool(_employee_lookup_terms(normalized)) and bool(
+        re.search(r"\b(show|view|find|get|details?|profile|information|about)\b", normalized)
+    )
+
+
+def _assistant_role_name(state: AgentState) -> str:
+    role = RoleEnum(state["role"])
+    return {
+        RoleEnum.ADMIN: "Admin",
+        RoleEnum.HR: "HR",
+        RoleEnum.EMPLOYEE: "Employee",
+    }[role]
 
 
 def select_database_tool(message: str) -> DatabaseToolName | None:
@@ -94,7 +160,9 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
     entities = ("department", "designation", "employee", "user", "account")
     if sum(1 for entity in entities if entity in normalized) >= 2:
         return "get_org_stats"
-    if re.search(r"\b(list|show|find|get|how many|number of|total|count)\b.*\bemployees\b", normalized):
+    if _is_specific_employee_query(normalized):
+        return "get_employee_details"
+    if re.search(r"\b(list|show|find|get|how many|number of|total|count)\b.*\bemployees?\b", normalized):
         return "list_employees"
     if "department" in normalized:
         return "list_departments"
@@ -174,6 +242,40 @@ def _employee_id_from_message(message: str) -> uuid.UUID | None:
     return uuid.UUID(match.group()) if match else None
 
 
+def _matching_employees(
+    message: str, employees: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Resolve an employee reference without allowing the model to invent an ID."""
+    normalized = " ".join(message.lower().split())
+    message_digits = re.sub(r"\D", "", message)
+    terms = _employee_lookup_terms(message)
+    exact: list[dict[str, object]] = []
+    partial: list[dict[str, object]] = []
+    for employee in employees:
+        employee_id = str(employee.get("employee_id") or "").lower()
+        code = str(employee.get("employee_code") or "").lower()
+        email = str(employee.get("email") or "").lower()
+        phone = str(employee.get("phone") or "").lower()
+        name = " ".join(str(employee.get("full_name") or "").lower().split())
+        phone_digits = re.sub(r"\D", "", phone)
+        phone_matches = (
+            len(message_digits) >= 7
+            and len(phone_digits) >= 7
+            and (message_digits in phone_digits or phone_digits in message_digits)
+        )
+        if phone_matches or any(
+            value and value in normalized for value in (employee_id, code, email, name)
+        ):
+            exact.append(employee)
+            continue
+        identity_words = set(
+            re.findall(r"[a-z0-9@._-]+", f"{name} {code} {email} {phone}")
+        )
+        if terms and terms <= identity_words:
+            partial.append(employee)
+    return exact or partial
+
+
 async def run_database_query(state: AgentState, db) -> AgentToolResult:
     tool = select_database_tool(state["message"])
     if tool is None:
@@ -181,7 +283,10 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             "agent": "database",
             "status": "error",
             "tool": "unknown",
-            "message": "I could not identify the requested HR information.",
+            "message": (
+                f"I could not identify the requested {_assistant_role_name(state)} "
+                "Assistant information request."
+            ),
         }
 
     if tool == "get_announcements":
@@ -297,9 +402,31 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
         else:
             message = "There are no policy documents available yet."
     else:
-        data = await get_employee_details(
-            state, db, employee_id=_employee_id_from_message(state["message"])
-        )
+        employee_id = _employee_id_from_message(state["message"])
+        if employee_id is None and not _is_profile_query(state["message"]):
+            matches = _matching_employees(
+                state["message"], await list_employees(state, db)
+            )
+            if not matches:
+                return {
+                    "agent": "database",
+                    "status": "error",
+                    "tool": tool,
+                    "message": "I could not find an employee matching that name, email, code, or ID.",
+                }
+            if len(matches) > 1:
+                return {
+                    "agent": "database",
+                    "status": "needs_input",
+                    "tool": "list_employees",
+                    "message": (
+                        f"I found {len(matches)} matching employees. Please use the "
+                        "employee code or email to identify the correct person."
+                    ),
+                    "data": matches,
+                }
+            employee_id = uuid.UUID(str(matches[0]["employee_id"]))
+        data = await get_employee_details(state, db, employee_id=employee_id)
         message, data = _profile_response(state["message"], data)
     return {
         "agent": "database",

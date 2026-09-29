@@ -358,8 +358,14 @@ def select_action_tool(message: str) -> ActionToolName | None:
             ),
             "delete_employee",
         ),
-        (r"\bapprove\b.*\bleave\b", "approve_leave"),
-        (r"\breject\b.*\bleave\b", "reject_leave"),
+        (
+            r"\b(approve|accept|grant)\b(?:.*\b(leaves?|requests?|approvals?|tasks?)\b)?",
+            "approve_leave",
+        ),
+        (
+            r"\b(reject|decline|deny)\b(?:.*\b(leaves?|requests?|approvals?|tasks?)\b)?",
+            "reject_leave",
+        ),
         (r"\b(create|add)\b.*\bleave\s+types?\b", "create_leave_type"),
         (r"\bapply\b.*\bleave\b", "apply_leave"),
         (r"\bcancel\b.*\bleave\b", "cancel_leave"),
@@ -596,6 +602,68 @@ async def _resolve_employee_name(
         payload.pop("employee_name", None)
         return f"I could not find an employee named {candidate.title()}. Select an employee."
     return "I found multiple employees with that name. Select the correct employee."
+
+
+async def _resolve_pending_leave_reference(
+    tool: ActionToolName,
+    payload: dict[str, object],
+    message: str,
+    state: AgentState,
+    db,
+) -> str | None:
+    """Resolve a spoken employee name to one eligible pending leave request."""
+    if tool not in {"approve_leave", "reject_leave"} or payload.get("request_id"):
+        return None
+    normalized = " ".join(message.lower().split())
+    ignored = {
+        "a",
+        "accept",
+        "approval",
+        "approvals",
+        "approve",
+        "decline",
+        "deny",
+        "for",
+        "grant",
+        "leave",
+        "leaves",
+        "of",
+        "reject",
+        "request",
+        "requests",
+        "s",
+        "task",
+        "tasks",
+        "the",
+    }
+    target_terms = {
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized)
+        if token not in ignored
+    }
+    if not target_terms:
+        return None
+
+    requests = await list_pending_leave_requests(state, db)
+    matches = []
+    for request in requests:
+        employee_terms = set(
+            re.findall(r"[a-z0-9]+", str(request.get("employee", "")).lower())
+        )
+        if target_terms <= employee_terms:
+            matches.append(request)
+    if len(matches) == 1:
+        payload["request_id"] = str(matches[0]["request_id"])
+        return None
+    if len(matches) > 1:
+        return (
+            "I found multiple pending leave requests for that employee. "
+            "Select the correct request by leave type and dates."
+        )
+    return (
+        "I could not find an eligible pending leave request for that employee. "
+        "Select one of the pending requests below."
+    )
 
 
 async def _prepare_employee_edit(
@@ -1535,6 +1603,26 @@ async def handle_action(
             result, next_pending = _pending_result(
                 tool, payload, "slots", email_error, "email", previous=pending
             )
+            return result, next_pending, sanitized
+
+    if tool in {"approve_leave", "reject_leave"}:
+        leave_resolution_error = await _resolve_pending_leave_reference(
+            tool, payload, state["message"], state, db
+        )
+        if leave_resolution_error:
+            result, next_pending = _pending_result(
+                tool,
+                payload,
+                "slots",
+                leave_resolution_error,
+                "request_id",
+                previous=pending,
+            )
+            suggestions, _ = await _slot_suggestions(
+                tool, "request_id", state, db, payload
+            )
+            if suggestions:
+                result.setdefault("data", {})["suggestions"] = suggestions
             return result, next_pending, sanitized
 
     if tool in {

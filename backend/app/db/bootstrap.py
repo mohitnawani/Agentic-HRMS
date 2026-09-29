@@ -181,7 +181,62 @@ DEMO_ANNOUNCEMENTS: tuple[tuple[str, str], ...] = (
         "Casual leave balances reset in January. Apply for pending 2026 leaves "
         "before December 20 so approvals finish on time.",
     ),
+    (
+        "Diwali holidays",
+        "The office will remain closed on October 20 for Diwali. Emergency "
+        "support stays reachable on Slack.",
+    ),
+    (
+        "New attendance policy",
+        "Check-in is due by 9:30 AM. Three late marks in a month trigger an HR review.",
+    ),
+    (
+        "Referral bonus program",
+        "Refer a friend for any open role and earn a bonus after their probation ends.",
+    ),
+    (
+        "Office timing change",
+        "Friday working hours are now 9 AM to 5 PM for the winter season.",
+    ),
 )
+
+# Full profile details for the demo team. Only blank fields are filled,
+# so edits made through the UI are never overwritten on redeploy.
+# phone, address, city, bank, account, ifsc, id proof type, id proof number.
+DEMO_DETAILS: dict[str, tuple[str, str, str, str, str, str, str, str]] = {
+    "hr.demo@company.com": ("9820012345", "12 MG Road", "Bengaluru", "HDFC Bank", "50100123456789", "HDFC0001234", "Aadhaar", "1234-5678-9012"),
+    "rahul.verma@company.com": ("9830012345", "45 Park Street", "Kolkata", "SBI", "30100234567890", "SBIN0060231", "PAN", "ABCDE1234F"),
+    "amit.patel@company.com": ("9840012345", "78 CG Road", "Ahmedabad", "ICICI Bank", "40100345678901", "ICIC0004052", "Aadhaar", "2345-6789-0123"),
+    "vaishali.gupta@company.com": ("9850012345", "90 Karol Bagh", "New Delhi", "HDFC Bank", "50100456789012", "HDFC0001104", "PAN", "BCDEF2345G"),
+    "sneha.reddy@company.com": ("9860012345", "23 Jubilee Hills", "Hyderabad", "SBI", "30100567890123", "SBIN0020756", "Aadhaar", "3456-7890-1234"),
+    "arjun.mehta@company.com": ("9870012345", "56 Linking Road", "Mumbai", "ICICI Bank", "40100678901234", "ICIC0001873", "PAN", "CDEFG3456H"),
+    "kavya.iyer@company.com": ("9880012345", "67 Anna Nagar", "Chennai", "HDFC Bank", "50100789012345", "HDFC0002241", "Aadhaar", "4567-8901-2345"),
+}
+
+
+async def _fill_demo_details(session, employees_by_email: dict[str, Employee]) -> None:
+    for email, details in DEMO_DETAILS.items():
+        employee = employees_by_email.get(email)
+        if employee is None:
+            continue
+        (phone, address, city, bank, account, ifsc, idt, idn) = details
+        if not employee.phone:
+            employee.phone = phone
+        if not employee.address:
+            employee.address = address
+        if not employee.city:
+            employee.city = city
+        if not employee.bank_name:
+            employee.bank_name = bank
+        if not employee.account_number:
+            employee.account_number = account
+        if not employee.ifsc_code:
+            employee.ifsc_code = ifsc
+        if not employee.id_proof_type:
+            employee.id_proof_type = idt
+        if not employee.id_proof_number:
+            employee.id_proof_number = idn
+    await session.flush()
 
 
 async def _get_or_create_user(session, email: str, role: RoleEnum, password_hash: str) -> User:
@@ -273,6 +328,8 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
         await _ensure_leave_balances(session, employee, leave_types, today.year)
         employees_by_email[email] = employee
 
+    await _fill_demo_details(session, employees_by_email)
+
     casual = next(lt for lt in leave_types if lt.name == "Casual Leave")
     sick = next(lt for lt in leave_types if lt.name == "Sick Leave")
     # One pending + one approved leave request so both queues have content.
@@ -326,6 +383,60 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
             balance.used_days += 2
     await session.flush()
 
+    # A second pending request (HR queue), one more approval, one rejection.
+    async def _extra_request(email: str, type_id, start: date, end: date, reason: str):
+        employee = employees_by_email[email]
+        exists = await session.scalar(
+            select(LeaveRequest).where(
+                LeaveRequest.employee_id == employee.id,
+                LeaveRequest.start_date == start,
+            )
+        )
+        if exists is not None:
+            return exists
+        row = LeaveRequest(
+            employee_id=employee.id,
+            leave_type_id=type_id,
+            start_date=start,
+            end_date=end,
+            reason=reason,
+            status=LeaveRequestStatus.PENDING,
+        )
+        session.add(row)
+        await session.flush()
+        return row
+
+    vaishali_pending = await _extra_request(
+        "vaishali.gupta@company.com", sick.id,
+        today + timedelta(days=3), today + timedelta(days=3), "Down with flu",
+    )
+    arjun_approved = await _extra_request(
+        "arjun.mehta@company.com", casual.id,
+        today + timedelta(days=10), today + timedelta(days=11), "Vacation",
+    )
+    if arjun_approved.status == LeaveRequestStatus.PENDING:
+        arjun_approved.status = LeaveRequestStatus.APPROVED
+        arjun_approved.reviewed_by = admin_user.id if admin_user else None
+        arjun_approved.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+        bal = await session.scalar(
+            select(LeaveBalance).where(
+                LeaveBalance.employee_id == arjun_approved.employee_id,
+                LeaveBalance.leave_type_id == casual.id,
+                LeaveBalance.year == today.year,
+            )
+        )
+        if bal is not None:
+            bal.used_days += 2
+    kavya_rejected = await _extra_request(
+        "kavya.iyer@company.com", casual.id,
+        today + timedelta(days=15), today + timedelta(days=20), "Long trip",
+    )
+    if kavya_rejected.status == LeaveRequestStatus.PENDING:
+        kavya_rejected.status = LeaveRequestStatus.REJECTED
+        kavya_rejected.reviewed_by = admin_user.id if admin_user else None
+        kavya_rejected.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+    await session.flush()
+
     # Attendance for the last 5 weekdays so dashboards/charts have content.
     seeded_days = 0
     lookback = 1
@@ -352,6 +463,29 @@ async def _seed_demo_data(session, *, departments, designations, leave_types, to
                 )
         seeded_days += 1
     await session.flush()
+
+    # One-time variety pass so calendars/dashboards show realistic states.
+    # Skipped entirely once any non-present record exists (never touches
+    # user-edited or previously varied rows).
+    varied = await session.scalar(
+        select(Attendance).where(Attendance.status != AttendanceStatus.PRESENT).limit(1)
+    )
+    if varied is None:
+        variety = await session.scalars(
+            select(Attendance)
+            .where(Attendance.status == AttendanceStatus.PRESENT)
+            .order_by(Attendance.date, Attendance.employee_id)
+            .limit(4)
+        )
+        rows = list(variety.all())
+        if len(rows) >= 4:
+            rows[0].check_in = datetime.combine(rows[0].date, time(10, 15))
+            rows[0].status = AttendanceStatus.LATE
+            rows[1].check_out = datetime.combine(rows[1].date, time(15, 0))
+            rows[1].status = AttendanceStatus.HALF_DAY
+            rows[2].check_out = None
+            await session.delete(rows[3])
+            await session.flush()
 
     for name, day in DEMO_HOLIDAYS:
         exists = await session.scalar(select(Holiday).where(Holiday.name == name))

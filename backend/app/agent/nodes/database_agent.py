@@ -135,9 +135,19 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
         return "get_announcements"
     if "holiday" in normalized:
         return "get_holidays"
+    if "leave" in normalized and re.search(r"\b(my|mine|own)\b", normalized):
+        return "get_leave_history"
     if "leave" in normalized and "pending" in normalized:
         return "list_pending_leave_requests"
-    if re.search(r"\b(leave approvals?|approval leaves?|employee leaves?|hr leaves?)\b", normalized):
+    if re.search(
+        r"\b(leave approvals?|approval leaves?|employee leaves?|hr leaves?|approvals?)\b",
+        normalized,
+    ):
+        return "list_pending_leave_requests"
+    if re.search(
+        r"\b(show|view|list|get|see|check|review)\b.*\b(leaves?|leave requests?)\b",
+        normalized,
+    ):
         return "list_pending_leave_requests"
     if "leave" in normalized and any(word in normalized for word in ("manage", "review")):
         return "list_pending_leave_requests"

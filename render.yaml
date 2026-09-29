@@ -74,6 +74,8 @@ services:
           envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: VITE_GOOGLE_LOGIN_ENABLED
         value: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
     routes:
       - type: rewrite
         source: /*

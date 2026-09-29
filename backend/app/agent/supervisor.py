@@ -11,7 +11,8 @@ AGENT_NODE_NAMES = Literal[
 
 ACTION_PATTERNS = (
     r"\b(create|add|update|change|edit|correct|fix|delete|remove|upload|publish|post)\b",
-    r"\b(approve|reject|cancel)\b.*\b(leave|request)\b",
+    r"\b(approve|accept|grant|reject|decline|deny)\b(?:.*\b(leave|request|approval|task)s?\b)?",
+    r"\bcancel\b.*\b(leave|request)\b",
     r"\bapply\b.*\bleave\b",
     r"\b(check[ -]?in|check[ -]?out)\b",
 )
@@ -20,6 +21,7 @@ DATABASE_PATTERNS = (
     r"\b(holiday|holidays|announcement|announcements)\b",
     r"\b(leave history|leave requests|pending leave|leave approved|leave rejected)\b",
     r"\b(leave approvals?|approval leaves?|employee leaves?|hr leaves?)\b",
+    r"\b(show|view|list|get|see|check|review|count)\b.*\b(approvals?|leaves?|leave requests?)\b",
     r"\b(manage|review)\b.*\bleaves?\b",
     r"\b(how many|remaining)\b.*\b(leave|leaves|days)\b",
     r"\b(how many|number of|total|count|list|show|available)\b.*\bpolic(?:y|ie|ies)\b",

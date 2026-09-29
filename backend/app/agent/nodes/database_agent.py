@@ -24,9 +24,11 @@ from app.agent.tools.read_tools import (
     list_departments,
     list_designations,
     list_employees,
+    list_leave_requests,
     list_pending_leave_requests,
     list_users,
 )
+from app.models.leave import LeaveRequestStatus
 from app.models.role import RoleEnum
 
 DatabaseToolName = Literal[
@@ -38,6 +40,7 @@ DatabaseToolName = Literal[
     "get_policy_catalog",
     "get_audit_logs",
     "get_leave_history",
+    "list_leave_requests",
     "list_pending_leave_requests",
     "get_holidays",
     "get_announcements",
@@ -148,7 +151,7 @@ def select_database_tool(message: str) -> DatabaseToolName | None:
         r"\b(show|view|list|get|see|check|review)\b.*\b(leaves?|leave requests?)\b",
         normalized,
     ):
-        return "list_pending_leave_requests"
+        return "list_leave_requests"
     if "leave" in normalized and any(word in normalized for word in ("manage", "review")):
         return "list_pending_leave_requests"
     if "leave" in normalized and any(
@@ -338,6 +341,32 @@ async def run_database_query(state: AgentState, db) -> AgentToolResult:
             f"There are {len(records)} pending leave request(s)."
             if records
             else "There are no pending leave requests."
+        )
+    elif tool == "list_leave_requests":
+        normalized = " ".join(state["message"].lower().split())
+        status_filter = next(
+            (
+                status
+                for word, status in (
+                    ("approved", LeaveRequestStatus.APPROVED),
+                    ("rejected", LeaveRequestStatus.REJECTED),
+                    ("cancelled", LeaveRequestStatus.CANCELLED),
+                    ("canceled", LeaveRequestStatus.CANCELLED),
+                    ("pending", LeaveRequestStatus.PENDING),
+                )
+                if word in normalized
+            ),
+            None,
+        )
+        records = await list_leave_requests(
+            state, db, request_status=status_filter
+        )
+        data = {"leave_requests": records}
+        label = f" {status_filter.value}" if status_filter else ""
+        message = (
+            f"I found {len(records)}{label} employee leave request(s)."
+            if records
+            else f"No{label} employee leave requests were found."
         )
     elif tool == "get_leave_history":
         records = await get_leave_history(state, db)

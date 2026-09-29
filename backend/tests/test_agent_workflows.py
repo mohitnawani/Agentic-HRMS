@@ -10,7 +10,7 @@ from app.agent.nodes.action_agent import (
 )
 from app.agent.nodes.database_agent import select_database_tool
 from app.agent.nodes.query_rewriter import correct_common_misspellings
-from app.agent.supervisor import supervisor_node
+from app.agent.supervisor import classify_intent, supervisor_node
 from app.models.role import RoleEnum
 
 
@@ -18,7 +18,7 @@ def test_every_supported_write_uses_confirmation_except_attendance() -> None:
     immediate = {
         tool for tool, spec in TOOL_WORKFLOWS.items() if spec.confirmation == "none"
     }
-    assert immediate == {"check_in", "check_out"}
+    assert immediate == {"check_in", "check_out", "upload_employee_photo"}
 
 
 def test_create_employee_never_collects_a_password_from_chat() -> None:
@@ -73,12 +73,40 @@ def test_admin_management_commands_select_the_expected_tools() -> None:
         assert select_action_tool(command) == expected
 
 
+def test_flexible_hr_leave_approval_phrases() -> None:
+    approve_phrases = (
+        "approve",
+        "approve task",
+        "approve leave",
+        "accept Rahul's leave request",
+        "grant leave approval",
+    )
+    reject_phrases = (
+        "reject",
+        "reject task",
+        "decline Rahul's leave",
+        "deny leave request",
+    )
+    for message in approve_phrases:
+        assert classify_intent(message) == "action"
+        assert select_action_tool(message) == "approve_leave"
+    for message in reject_phrases:
+        assert classify_intent(message) == "action"
+        assert select_action_tool(message) == "reject_leave"
+
+
 def test_admin_read_commands_select_management_lists() -> None:
     assert select_database_tool("how many holidays are there") == "get_holidays"
     assert select_database_tool("show pending leaves") == "list_pending_leave_requests"
     assert select_database_tool("show me the leave approvals") == "list_pending_leave_requests"
     assert select_database_tool("show employee leaves") == "list_pending_leave_requests"
     assert select_database_tool("show HR pending leaves") == "list_pending_leave_requests"
+    assert select_database_tool("show me approvals") == "list_pending_leave_requests"
+    assert select_database_tool("see leave requests") == "list_leave_requests"
+    assert select_database_tool("show leaves") == "list_leave_requests"
+    assert select_database_tool("show approved leaves") == "list_leave_requests"
+    assert select_database_tool("show rejected leaves") == "list_leave_requests"
+    assert select_database_tool("show my leaves") == "get_leave_history"
     assert select_database_tool("manage leave requests") == "list_pending_leave_requests"
     assert select_database_tool("show departments") == "list_departments"
     assert select_database_tool("show designations") == "list_designations"
@@ -97,6 +125,8 @@ def test_admin_command_typos_are_normalized_before_routing() -> None:
     assert correct_common_misspellings("reomve policky") == "remove policy"
     assert correct_common_misspellings("add anoucmetn") == "add announcement"
     assert correct_common_misspellings("rejdct leave") == "reject leave"
+    assert correct_common_misspellings("apporve task") == "approve task"
+    assert correct_common_misspellings("show apprvsl") == "show approvals"
 
 
 def test_only_explicit_confirmation_words_are_accepted() -> None:

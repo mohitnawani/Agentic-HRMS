@@ -41,6 +41,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_policy_catalog: "Policy catalog",
   get_audit_logs: "Agent audit logs",
   get_leave_history: "Leave history",
+  list_leave_requests: "Employee leave requests",
   list_pending_leave_requests: "Pending leave requests",
   get_holidays: "Holidays",
   get_announcements: "Announcements",

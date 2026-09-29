@@ -507,6 +507,48 @@ async def list_pending_leave_requests(
     ]
 
 
+async def list_leave_requests(
+    state: AgentState,
+    db: AsyncSession,
+    *,
+    request_status: LeaveRequestStatus | None = None,
+) -> list[dict[str, object]]:
+    """List organization leave records visible to the authenticated reviewer."""
+    _, role = _actor(state)
+    _require(role, "leave:read_all")
+    allowed_requester_roles = (
+        {RoleEnum.EMPLOYEE}
+        if role == RoleEnum.HR
+        else {RoleEnum.EMPLOYEE, RoleEnum.HR}
+    )
+    statement = (
+        select(LeaveRequest, LeaveType, Employee, User.role)
+        .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+        .join(Employee, Employee.id == LeaveRequest.employee_id)
+        .join(User, User.id == Employee.user_id)
+        .where(User.role.in_(allowed_requester_roles))
+        .order_by(LeaveRequest.created_at.desc())
+        .limit(200)
+    )
+    if request_status is not None:
+        statement = statement.where(LeaveRequest.status == request_status)
+    rows = (await db.execute(statement)).all()
+    return [
+        {
+            "request_id": str(request.id),
+            "employee_id": str(employee.id),
+            "employee": f"{employee.first_name} {employee.last_name}",
+            "employee_role": requester_role.value,
+            "leave_type": leave_type.name,
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "reason": request.reason,
+            "status": request.status.value,
+        }
+        for request, leave_type, employee, requester_role in rows
+    ]
+
+
 async def get_holidays(
     state: AgentState, db: AsyncSession, *, year: int | None = None
 ) -> list[dict[str, object]]:

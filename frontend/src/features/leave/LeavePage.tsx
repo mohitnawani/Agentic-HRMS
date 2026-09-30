@@ -28,7 +28,7 @@ const applySchema = z.object({
   leave_type_id: z.string().min(1, "Pick a leave type"),
   start_date: z.string().min(1, "Required"),
   end_date: z.string().min(1, "Required"),
-  reason: z.string().min(1, "Required"),
+  reason: z.string().trim().min(1, "Required").max(500, "Too long (max 500 characters)"),
 }).refine((v) => v.end_date >= v.start_date, {
   message: "End date can't be before start date",
   path: ["end_date"],
@@ -83,7 +83,7 @@ export default function LeavePage() {
                   />
                   {errors.leave_type_id && <p className="text-sm text-destructive">{errors.leave_type_id.message}</p>}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Start</Label>
                     <Input type="date" {...register("start_date")} />
@@ -112,7 +112,7 @@ export default function LeavePage() {
       {balancesLoading ? (
         <LoadingSkeleton rows={3} />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           {balances?.map((b, i) => (
             <Card key={b.leave_type_id} tone={(["sage", "moss", "mint"] as const)[i % 3]}>
               <CardHeader><CardTitle className="text-sm text-muted-foreground">{b.leave_type_name}</CardTitle></CardHeader>
@@ -133,6 +133,8 @@ export default function LeavePage() {
           rowKey={(r: LeaveRequest) => r.id}
           data={requests ?? []}
           emptyTitle="No leave requests yet"
+          searchableText={(r) => `${r.start_date} ${r.end_date} ${r.reason} ${r.status}`}
+          searchPlaceholder="Search leave requests by date, reason, or status..."
           columns={[
             { header: "From", render: (r) => r.start_date },
             { header: "To", render: (r) => r.end_date },

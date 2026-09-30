@@ -4,6 +4,7 @@ export interface PolicyDocument {
   id: string;
   title: string;
   category: string;
+  summary: string | null;
   file_path: string;
   uploaded_by: string;
   version: number;
@@ -23,5 +24,13 @@ export const uploadPolicy = (data: { title: string; category: string; file: File
   return apiClient.post<PolicyDocument>("/policies", form).then((r) => r.data);
 };
 
-export const getPolicyDownloadUrl = (id: string) =>
-  apiClient.get<{ download_url: string }>(`/policies/${id}/download`).then((r) => r.data.download_url);
+export const downloadPolicyFile = (id: string) =>
+  apiClient
+    .get<Blob>(`/policies/${id}/download`, { responseType: "blob" })
+    .then((response) => response.data);
+
+export const deletePolicy = (id: string) =>
+  apiClient.delete(`/policies/${id}`);
+
+export const updatePolicy = (id: string, data: { title: string; category: string }) =>
+  apiClient.patch<PolicyDocument>(`/policies/${id}`, data).then((r) => r.data);

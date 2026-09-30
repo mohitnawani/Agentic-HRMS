@@ -16,28 +16,32 @@ import { useCreateEmployee, useUploadPhoto } from "./useEmployees";
 import type { EmployeeCreatePayload } from "./employeeApi";
 import { useAppSelector } from "@/store/hooks";
 import { cn } from "@/lib/utils";
+import { emailSchema, nameSchema, optionalPhoneSchema, passwordSchema } from "@/lib/validation";
 
 const schema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6, "At least 6 characters"),
-  first_name: z.string().min(1, "Required"),
-  last_name: z.string().min(1, "Required"),
-  phone: z.string().optional(),
+  email: emailSchema,
+  password: passwordSchema,
+  first_name: nameSchema(),
+  last_name: nameSchema(),
+  phone: optionalPhoneSchema.optional(),
   date_of_joining: z.string().min(1, "Required"),
   department_id: z.string().optional(),
   designation_id: z.string().optional(),
-  employee_code: z.string().optional(),
-  date_of_birth: z.string().optional(),
-  gender: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  emergency_contact: z.string().optional(),
-  bank_name: z.string().optional(),
-  account_number: z.string().optional(),
-  ifsc_code: z.string().optional(),
-  id_proof_type: z.string().optional(),
-  id_proof_number: z.string().optional(),
-  role: z.enum(["admin", "hr", "employee"]).optional(),
+  employee_code: z.string().trim().max(20, "Too long (max 20 characters)").optional(),
+  date_of_birth: z.string().optional().refine(
+    (v) => !v || v <= new Date().toISOString().slice(0, 10),
+    "Date of birth can't be in the future",
+  ),
+  gender: z.string().trim().max(20, "Too long").optional(),
+  address: z.string().trim().max(500, "Too long (max 500 characters)").optional(),
+  city: z.string().trim().max(100, "Too long").optional(),
+  emergency_contact: optionalPhoneSchema.optional(),
+  bank_name: z.string().trim().max(100, "Too long").optional(),
+  account_number: z.string().trim().max(50, "Too long").optional(),
+  ifsc_code: z.string().trim().max(20, "Too long").optional(),
+  id_proof_type: z.string().trim().max(50, "Too long").optional(),
+  id_proof_number: z.string().trim().max(100, "Too long").optional(),
+  role: z.enum(["hr", "employee"]).optional(),
   photo: z.any().optional(),
 });
 
@@ -45,7 +49,7 @@ type FormValues = z.infer<typeof schema>;
 
 const STEPS = ["Work Profile", "Personal Info", "Banking", "Documents"] as const;
 const STEP_FIELDS: Record<number, (keyof FormValues)[]> = {
-  0: ["date_of_joining", "department_id", "designation_id", "employee_code"],
+  0: ["date_of_joining", "department_id", "designation_id", "employee_code", "role"],
   1: ["first_name", "last_name", "email", "password", "phone", "date_of_birth", "gender", "address", "city", "emergency_contact", "photo"],
   2: ["bank_name", "account_number", "ifsc_code"],
   3: ["id_proof_type", "id_proof_number"],
@@ -56,14 +60,21 @@ export default function EmployeeForm() {
   const role = useAppSelector((s) => s.auth.role);
   const { data: departments } = useDepartments();
   const { data: designations } = useDesignations();
+
+  const { register, handleSubmit, control, trigger, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { role: "employee" },
+  });
+
+  // Cascading select: designations shown belong to the chosen department.
+  const selectedDepartmentId = watch("department_id");
+  const visibleDesignations = selectedDepartmentId
+    ? designations?.filter((d) => d.department_id === selectedDepartmentId)
+    : designations;
   const createEmployee = useCreateEmployee();
   const uploadPhoto = useUploadPhoto();
   const [step, setStep] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
-
-  const { register, handleSubmit, control, trigger, formState: { errors, isSubmitting } } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-  });
 
   const next = async () => {
     if (await trigger(STEP_FIELDS[step])) setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -121,14 +132,21 @@ export default function EmployeeForm() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {step === 0 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Department</Label>
                     <Controller
                       control={control}
                       name="department_id"
                       render={({ field }) => (
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            // Reset designation: it must belong to the new department.
+                            setValue("designation_id", undefined);
+                          }}
+                          value={field.value}
+                        >
                           <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
                           <SelectContent>
                             {departments?.map((d) => (
@@ -146,18 +164,21 @@ export default function EmployeeForm() {
                       name="designation_id"
                       render={({ field }) => (
                         <Select onValueChange={field.onChange} value={field.value}>
-                          <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={selectedDepartmentId ? "Select designation" : "Pick a department first"} /></SelectTrigger>
                           <SelectContent>
-                            {designations?.map((d) => (
+                            {visibleDesignations?.map((d) => (
                               <SelectItem key={d.id} value={d.id}>{d.title}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     />
+                    {selectedDepartmentId && visibleDesignations?.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No designations in this department yet — add one under Administration → Designations.</p>
+                    )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Date of Joining</Label>
                     <Input type="date" {...register("date_of_joining")} />
@@ -169,28 +190,29 @@ export default function EmployeeForm() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label>Role</Label>
+                  <Label>Account Role</Label>
                   <Controller
                     control={control}
                     name="role"
                     render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "employee"}>
                         <SelectTrigger><SelectValue placeholder="Employee" /></SelectTrigger>
                         <SelectContent>
-                          {(role === "admin" ? ["admin", "hr", "employee"] : ["hr", "employee"]).map((r) => (
+                          {["hr", "employee"].map((r) => (
                             <SelectItem key={r} value={r}>{r === "hr" ? "HR" : r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     )}
                   />
+                  <p className="text-xs text-muted-foreground">HR accounts can manage employees and approve leaves. Only admins can create Admin accounts.</p>
                 </div>
               </>
             )}
 
             {step === 1 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>First Name</Label>
                     <Input {...register("first_name")} />
@@ -202,19 +224,24 @@ export default function EmployeeForm() {
                     {fieldError("last_name")}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Email</Label>
-                    <Input type="email" {...register("email")} />
+                    <Input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="name@gmail.com"
+                      {...register("email")}
+                    />
                     {fieldError("email")}
                   </div>
                   <div className="space-y-1">
                     <Label>Temporary Password</Label>
-                    <Input type="password" {...register("password")} />
+                    <Input type="password" autoComplete="new-password" placeholder="Min 8 chars, letter + number" {...register("password")} />
                     {fieldError("password")}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Phone</Label>
                     <Input {...register("phone")} />
@@ -224,7 +251,7 @@ export default function EmployeeForm() {
                     <Input {...register("emergency_contact")} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Date of Birth</Label>
                     <Input type="date" {...register("date_of_birth")} />
@@ -251,7 +278,7 @@ export default function EmployeeForm() {
                   <Label>Address</Label>
                   <Textarea {...register("address")} placeholder="Street, area..." />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>City</Label>
                     <Input {...register("city")} />
@@ -270,7 +297,7 @@ export default function EmployeeForm() {
                   <Label>Bank Name</Label>
                   <Input {...register("bank_name")} placeholder="HDFC Bank" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Account Number</Label>
                     <Input {...register("account_number")} />
@@ -285,7 +312,7 @@ export default function EmployeeForm() {
 
             {step === 3 && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>ID Proof Type</Label>
                     <Controller

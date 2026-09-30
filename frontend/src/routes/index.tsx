@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router";
 import LoginPage from "@/features/auth/LoginPage";
 import ProtectedRoute from "./ProtectedRoute";
 import AppLayout from "@/layouts/AppLayout";
-import PlaceholderPage from "@/pages/PlaceholderPage";
+import ChatPage from "@/features/agent/ChatPage";
 import EmployeeDashboard from "@/features/dashboard/EmployeeDashboard";
 import HRDashboard from "@/features/dashboard/HRDashboard";
 import AdminDashboard from "@/features/dashboard/AdminDashboard";
@@ -33,8 +33,10 @@ export const router = createBrowserRouter([
           { path: "/employee/profile", element: <MyProfilePage /> },
           { path: "/employee/attendance", element: <AttendanceHistoryPage /> },
           { path: "/employee/leave", element: <LeavePage /> },
+          { path: "/employee/holidays", element: <HolidaysPage /> },
           { path: "/employee/policies", element: <PoliciesPage /> },
-          { path: "/employee/assistant", element: <PlaceholderPage title="Assistant" /> },
+          { path: "/employee/announcements", element: <AnnouncementsPage /> },
+          { path: "/employee/assistant", element: <ChatPage /> },
         ],
       },
     ],
@@ -50,10 +52,14 @@ export const router = createBrowserRouter([
           { path: "/hr/employees/new", element: <EmployeeForm /> },
           { path: "/hr/employees/:id", element: <EmployeeDetailPage /> },
           { path: "/hr/attendance", element: <AttendanceCorrectionPage /> },
+          { path: "/hr/departments", element: <DepartmentPage /> },
+          { path: "/hr/designations", element: <DesignationPage /> },
           { path: "/hr/leave", element: <LeaveApprovalsPage /> },
+          { path: "/hr/my-leave", element: <LeavePage /> },
+          { path: "/hr/holidays", element: <HolidaysPage /> },
           { path: "/hr/policies", element: <PoliciesPage /> },
           { path: "/hr/announcements", element: <AnnouncementsPage /> },
-          { path: "/hr/assistant", element: <PlaceholderPage title="Assistant" /> },
+          { path: "/hr/assistant", element: <ChatPage /> },
         ],
       },
     ],
@@ -68,12 +74,15 @@ export const router = createBrowserRouter([
           { path: "/admin/employees", element: <EmployeeListPage /> },
           { path: "/admin/employees/new", element: <EmployeeForm /> },
           { path: "/admin/employees/:id", element: <EmployeeDetailPage /> },
+          { path: "/admin/attendance", element: <AttendanceCorrectionPage /> },
           { path: "/admin/departments", element: <DepartmentPage /> },
           { path: "/admin/designations", element: <DesignationPage /> },
           { path: "/admin/holidays", element: <HolidaysPage /> },
+          { path: "/admin/approvals", element: <LeaveApprovalsPage /> },
+          { path: "/admin/policies", element: <PoliciesPage /> },
           { path: "/admin/announcements", element: <AnnouncementsPage /> },
           { path: "/admin/users", element: <UsersPage /> },
-          { path: "/admin/assistant", element: <PlaceholderPage title="Assistant" /> },
+          { path: "/admin/assistant", element: <ChatPage /> },
         ],
       },
     ],

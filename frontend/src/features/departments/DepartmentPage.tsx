@@ -8,14 +8,19 @@ import {
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
+import { useAppSelector } from "@/store/hooks";
 import { useDepartments, useCreateDepartment, useDeleteDepartment } from "./useDepartments";
 import type { Department } from "./departmentApi";
 
 export default function DepartmentPage() {
+  const role = useAppSelector((s) => s.auth.role);
+  const canWrite = role === "admin";
   const { data: departments, isLoading } = useDepartments();
   const createDepartment = useCreateDepartment();
   const deleteDepartment = useDeleteDepartment();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Department | null>(null);
   const { register, handleSubmit, reset } = useForm<{ name: string; description?: string }>();
 
   const onSubmit = async (values: { name: string; description?: string }) => {
@@ -30,7 +35,7 @@ export default function DepartmentPage() {
     <div>
       <PageHeader
         title="Departments"
-        actions={
+        actions={canWrite && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>Add Department</Button></DialogTrigger>
             <DialogContent>
@@ -42,23 +47,42 @@ export default function DepartmentPage() {
               </form>
             </DialogContent>
           </Dialog>
-        }
+        )}
       />
       <DataTable
         rowKey={(d: Department) => d.id}
         data={departments ?? []}
+        searchableText={(d) => `${d.name} ${d.description ?? ""}`}
+        searchPlaceholder="Search departments..."
         columns={[
           { header: "Name", render: (d) => d.name },
           { header: "Description", render: (d) => d.description ?? "—" },
-          {
-            header: "Actions",
-            render: (d) => (
-              <Button size="sm" variant="destructive" onClick={() => deleteDepartment.mutate(d.id)}>
-                Delete
-              </Button>
-            ),
-          },
+          ...(canWrite
+            ? [{
+                header: "Actions",
+                render: (d: Department) => (
+                  <Button size="sm" variant="destructive" onClick={() => setToDelete(d)}>
+                    Delete
+                  </Button>
+                ),
+              }]
+            : []),
         ]}
+      />
+      <ConfirmActionDialog
+        open={toDelete !== null}
+        title="Delete department?"
+        description={<>This will permanently delete <strong>{toDelete?.name}</strong>. Departments currently in use cannot be deleted.</>}
+        confirmLabel="Delete department"
+        pending={deleteDepartment.isPending}
+        error={deleteDepartment.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteDepartment.isPending) setToDelete(null);
+        }}
+        onConfirm={() => {
+          if (!toDelete) return;
+          deleteDepartment.mutate(toDelete.id, { onSuccess: () => setToDelete(null) });
+        }}
       />
     </div>
   );

@@ -11,9 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
-import { useUsers, useCreateUser, useActivateUser, useDeactivateUser } from "./useUsers";
-import { useAppSelector } from "@/store/hooks";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
+import { useUsers, useCreateUser, useActivateUser, useDeactivateUser, useUpdateUserEmail } from "./useUsers";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { setEmail as setAuthenticatedEmail } from "@/store/authSlice";
 import type { ManagedRole, ManagedUser } from "./userApi";
+import { emailSchema, passwordSchema } from "@/lib/validation";
 
 const ROLE_VARIANT: Record<ManagedRole, "default" | "secondary" | "outline"> = {
   admin: "default",
@@ -22,32 +25,86 @@ const ROLE_VARIANT: Record<ManagedRole, "default" | "secondary" | "outline"> = {
 };
 
 const createSchema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(6, "At least 6 characters"),
+  email: emailSchema,
+  password: passwordSchema,
   role: z.enum(["admin", "hr", "employee"]),
   first_name: z.string().optional(),
   last_name: z.string().optional(),
-});
+}).refine(
+  (v) => (v.first_name?.trim() ? true : false) === (v.last_name?.trim() ? true : false),
+  { message: "Provide both first and last name, or neither", path: ["last_name"] },
+);
 
 type CreateValues = z.infer<typeof createSchema>;
+const editEmailSchema = z.object({ email: emailSchema });
+type EditEmailValues = z.infer<typeof editEmailSchema>;
 
 export default function UsersPage() {
+  const dispatch = useAppDispatch();
   const { data: users, isLoading, isError } = useUsers();
   const createUser = useCreateUser();
   const activateUser = useActivateUser();
   const deactivateUser = useDeactivateUser();
+  const updateUserEmail = useUpdateUserEmail();
   const [open, setOpen] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [toDeactivate, setToDeactivate] = useState<ManagedUser | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   const myEmail = useAppSelector((s) => s.auth.email);
 
   const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
     defaultValues: { role: "employee" },
   });
+  const {
+    register: registerEdit,
+    handleSubmit: handleEditSubmit,
+    reset: resetEdit,
+    formState: { errors: editErrors, isSubmitting: isEditing },
+  } = useForm<EditEmailValues>({ resolver: zodResolver(editEmailSchema) });
 
   const onSubmit = async (values: CreateValues) => {
-    await createUser.mutateAsync(values);
-    reset({ role: "employee" });
-    setOpen(false);
+    setServerError(null);
+    const email = values.email.trim().toLowerCase();
+    if (users?.some((user) => user.email.toLowerCase() === email)) {
+      setServerError("Email already registered");
+      return;
+    }
+    try {
+      await createUser.mutateAsync({ ...values, email });
+      reset({ role: "employee" });
+      setOpen(false);
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setServerError(typeof detail === "string" ? detail : "Could not create user.");
+    }
+  };
+
+  const openEmailEditor = (user: ManagedUser) => {
+    setEditError(null);
+    setEditingUser(user);
+    resetEdit({ email: user.email });
+  };
+
+  const onEditEmail = async (values: EditEmailValues) => {
+    if (!editingUser) return;
+    setEditError(null);
+    const email = values.email.trim().toLowerCase();
+    if (users?.some((user) => user.id !== editingUser.id && user.email.toLowerCase() === email)) {
+      setEditError("Email already registered");
+      return;
+    }
+    try {
+      const updated = await updateUserEmail.mutateAsync({ id: editingUser.id, email });
+      if (editingUser.email.toLowerCase() === myEmail?.toLowerCase()) {
+        dispatch(setAuthenticatedEmail(updated.email));
+      }
+      setEditingUser(null);
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setEditError(typeof detail === "string" ? detail : "Could not update email.");
+    }
   };
 
   return (
@@ -56,19 +113,30 @@ export default function UsersPage() {
         title="Users"
         description={`${users?.length ?? 0} accounts`}
         actions={
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => {
+              setOpen(nextOpen);
+              setServerError(null);
+            }}
+          >
             <DialogTrigger asChild><Button>Create User</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>New User Account</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
                 <div className="space-y-1">
                   <Label>Email</Label>
-                  <Input type="email" {...register("email")} />
+                  <Input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="name@gmail.com"
+                    {...register("email")}
+                  />
                   {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
                 </div>
                 <div className="space-y-1">
                   <Label>Temporary Password</Label>
-                  <Input type="password" {...register("password")} />
+                  <Input type="password" autoComplete="new-password" placeholder="Min 8 chars, letter + number" {...register("password")} />
                   {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
                 </div>
                 <div className="space-y-1">
@@ -88,7 +156,7 @@ export default function UsersPage() {
                     )}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>First Name (optional)</Label>
                     <Input {...register("first_name")} />
@@ -98,6 +166,7 @@ export default function UsersPage() {
                     <Input {...register("last_name")} />
                   </div>
                 </div>
+                {serverError && <p className="text-sm text-destructive">{serverError}</p>}
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting ? "Creating..." : "Create User"}
                 </Button>
@@ -107,6 +176,40 @@ export default function UsersPage() {
         }
       />
 
+      <Dialog
+        open={editingUser !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEditingUser(null);
+          setEditError(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit User Email</DialogTitle></DialogHeader>
+          <form onSubmit={handleEditSubmit(onEditEmail)} className="space-y-4">
+            <div className="space-y-1">
+              <Label htmlFor="edit-user-email">Email</Label>
+              <Input
+                id="edit-user-email"
+                type="email"
+                autoComplete="email"
+                placeholder="name@gmail.com"
+                {...registerEdit("email")}
+              />
+              {editErrors.email && <p className="text-sm text-destructive">{editErrors.email.message}</p>}
+            </div>
+            {editError && <p className="text-sm text-destructive">{editError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isEditing}>
+                {isEditing ? "Saving..." : "Save Email"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {isLoading && <LoadingSkeleton rows={5} />}
       {isError && <p className="text-destructive">Failed to load users.</p>}
       {!isLoading && !isError && (
@@ -114,6 +217,8 @@ export default function UsersPage() {
           rowKey={(u: ManagedUser) => u.id}
           data={users ?? []}
           emptyTitle="No users found"
+          searchableText={(u) => `${u.email} ${u.role} ${u.is_active ? "active" : "inactive"}`}
+          searchPlaceholder="Search users by email, role, or status..."
           columns={[
             { header: "Email", render: (u) => u.email },
             { header: "Role", render: (u) => <Badge variant={ROLE_VARIANT[u.role]}>{u.role}</Badge> },
@@ -127,25 +232,47 @@ export default function UsersPage() {
             },
             {
               header: "Actions",
-              render: (u) => u.is_active ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={u.email === myEmail}
-                  title={u.email === myEmail ? "You cannot deactivate your own account" : undefined}
-                  onClick={() => deactivateUser.mutate(u.id)}
-                >
-                  Deactivate
-                </Button>
-              ) : (
-                <Button size="sm" onClick={() => activateUser.mutate(u.id)}>
-                  Activate
-                </Button>
+              render: (u) => (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => openEmailEditor(u)}>
+                    Edit email
+                  </Button>
+                  {u.is_active ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={u.email.toLowerCase() === myEmail?.toLowerCase()}
+                      title={u.email.toLowerCase() === myEmail?.toLowerCase() ? "You cannot deactivate your own account" : undefined}
+                      onClick={() => setToDeactivate(u)}
+                    >
+                      Deactivate
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => activateUser.mutate(u.id)}>
+                      Activate
+                    </Button>
+                  )}
+                </div>
               ),
             },
           ]}
         />
       )}
+      <ConfirmActionDialog
+        open={toDeactivate !== null}
+        title="Deactivate user account?"
+        description={<>This will prevent <strong>{toDeactivate?.email}</strong> from signing in until an admin activates the account again.</>}
+        confirmLabel="Deactivate account"
+        pending={deactivateUser.isPending}
+        error={deactivateUser.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deactivateUser.isPending) setToDeactivate(null);
+        }}
+        onConfirm={() => {
+          if (!toDeactivate) return;
+          deactivateUser.mutate(toDeactivate.id, { onSuccess: () => setToDeactivate(null) });
+        }}
+      />
     </div>
   );
 }

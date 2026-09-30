@@ -43,8 +43,14 @@ export const googleLoginThunk = createAsyncThunk(
   ) => {
     try {
       return await googleLoginApi(credential.idToken, credential.email);
-    } catch {
-      return rejectWithValue("Google sign-in failed — is this email registered with HR?");
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })
+        ?.response?.data?.detail;
+      return rejectWithValue(
+        typeof detail === "string"
+          ? detail
+          : "Google sign-in failed. Please try again.",
+      );
     }
   }
 );
@@ -64,6 +70,9 @@ const authSlice = createSlice({
     },
     setAccessToken: (state, action: PayloadAction<string>) => {
       state.accessToken = action.payload;
+    },
+    setEmail: (state, action: PayloadAction<string>) => {
+      state.email = action.payload;
     },
     logout: (state) => {
       state.accessToken = null;
@@ -109,5 +118,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setAuth, setAccessToken, logout } = authSlice.actions;
+export const { setAuth, setAccessToken, setEmail, logout } = authSlice.actions;
 export default authSlice.reducer;

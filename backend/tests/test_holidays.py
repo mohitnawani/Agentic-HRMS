@@ -75,6 +75,7 @@ async def test_holiday_permissions(client, admin_token, employee_token, hr_token
     h_hr = {"Authorization": f"Bearer {hr_token}"}
 
     assert (await client.get("/api/v1/holidays", headers=h_emp)).status_code == 200
+    assert (await client.get("/api/v1/holidays", headers=h_hr)).status_code == 200
     assert (await client.post("/api/v1/holidays", json=_holiday_payload(), headers=h_emp)).status_code == 403
     assert (await client.post("/api/v1/holidays", json=_holiday_payload(), headers=h_hr)).status_code == 403
     assert (await client.post("/api/v1/holidays", json=_holiday_payload(), headers=h_admin)).status_code == 200

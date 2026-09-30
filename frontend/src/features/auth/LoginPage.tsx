@@ -24,7 +24,9 @@ export default function LoginPage() {
   const { status, error: serverError } = useAppSelector((state) => state.auth);
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const googleEnabled = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const googleEnabled =
+    import.meta.env.VITE_GOOGLE_LOGIN_ENABLED === "true" &&
+    !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   const {
     register,
@@ -148,6 +150,7 @@ export default function LoginPage() {
                   <GoogleLogin
                     text="signin_with"
                     onSuccess={async (cred) => {
+                      setGoogleError(null);
                       if (!cred.credential) return;
                       const email = JSON.parse(atob(cred.credential.split(".")[1])).email as string;
                       const result = await dispatch(googleLoginThunk({ idToken: cred.credential, email }));

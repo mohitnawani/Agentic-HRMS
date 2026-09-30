@@ -2,8 +2,16 @@ import axios from "axios";
 import { store } from "@/store/store";
 import { setAccessToken, logout } from "@/store/authSlice";
 
+const configuredApiUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+const renderApiHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
+
+export const API_BASE_URL = (
+  configuredApiUrl ||
+  (renderApiHost ? `https://${renderApiHost}/api/v1` : "http://127.0.0.1:8000/api/v1")
+).replace(/\/$/, "");
+
 export const apiClient = axios.create({
-  baseURL: "http://127.0.0.1:8000/api/v1",
+  baseURL: API_BASE_URL,
 });
 
 apiClient.interceptors.request.use((config) => {
@@ -37,7 +45,7 @@ apiClient.interceptors.response.use(
 
       isRefreshing = true;
       try {
-        const { data } = await axios.post("http://127.0.0.1:8000/api/v1/auth/refresh", {
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
           refresh_token: refreshToken,
         });
         store.dispatch(setAccessToken(data.access_token));

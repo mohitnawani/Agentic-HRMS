@@ -47,6 +47,21 @@ export const correctAttendance = (
   data: { check_in?: string; check_out?: string; status?: string; correction_reason: string }
 ) => apiClient.patch<AttendanceRecord>(`/attendance/${attendanceId}/correct`, data).then((r) => r.data);
 
+export interface AttendanceDateCorrectionPayload {
+  status: AttendanceRecord["status"];
+  correction_reason: string;
+  check_in?: string | null;
+  check_out?: string | null;
+}
+
+export const correctAttendanceForDate = (
+  employeeId: string,
+  date: string,
+  data: AttendanceDateCorrectionPayload,
+) => apiClient
+  .put<AttendanceRecord>(`/attendance/${employeeId}/date/${date}`, data)
+  .then((r) => r.data);
+
 // month calendar
 export interface CalendarDay {
   date: string;

@@ -7,16 +7,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog";
+import { useAppSelector } from "@/store/hooks";
 import { useHolidays, useCreateHoliday, useDeleteHoliday } from "./useHolidays";
 import type { Holiday } from "./holidayApi";
 
 export default function HolidaysPage() {
+  const role = useAppSelector((s) => s.auth.role);
+  const canWrite = role === "admin";
   const [year, setYear] = useState<string>("");
   const yearNum = year ? Number(year) : undefined;
   const { data: holidays, isLoading, isError } = useHolidays(yearNum);
   const createHoliday = useCreateHoliday();
   const deleteHoliday = useDeleteHoliday();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Holiday | null>(null);
   const { register, handleSubmit, reset } = useForm<{ name: string; date: string }>();
 
   const onSubmit = async (values: { name: string; date: string }) => {
@@ -30,7 +35,7 @@ export default function HolidaysPage() {
       <PageHeader
         title="Holidays"
         description="Company holiday calendar"
-        actions={
+        actions={canWrite && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>Add Holiday</Button></DialogTrigger>
             <DialogContent>
@@ -48,7 +53,7 @@ export default function HolidaysPage() {
               </form>
             </DialogContent>
           </Dialog>
-        }
+        )}
       />
 
       <div className="max-w-xs mb-4">
@@ -71,20 +76,39 @@ export default function HolidaysPage() {
           rowKey={(h: Holiday) => h.id}
           data={holidays ?? []}
           emptyTitle="No holidays yet"
+          searchableText={(h) => `${h.name} ${h.date}`}
+          searchPlaceholder="Search holidays by name or date..."
           columns={[
             { header: "Name", render: (h) => h.name },
             { header: "Date", render: (h) => h.date },
-            {
-              header: "Actions",
-              render: (h) => (
-                <Button size="sm" variant="destructive" onClick={() => deleteHoliday.mutate(h.id)}>
-                  Delete
-                </Button>
-              ),
-            },
+            ...(canWrite
+              ? [{
+                  header: "Actions",
+                  render: (h: Holiday) => (
+                    <Button size="sm" variant="destructive" onClick={() => setToDelete(h)}>
+                      Delete
+                    </Button>
+                  ),
+                }]
+              : []),
           ]}
         />
       )}
+      <ConfirmActionDialog
+        open={toDelete !== null}
+        title="Delete holiday?"
+        description={<>This will permanently delete <strong>{toDelete?.name}</strong> on {toDelete?.date}.</>}
+        confirmLabel="Delete holiday"
+        pending={deleteHoliday.isPending}
+        error={deleteHoliday.isError}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteHoliday.isPending) setToDelete(null);
+        }}
+        onConfirm={() => {
+          if (!toDelete) return;
+          deleteHoliday.mutate(toDelete.id, { onSuccess: () => setToDelete(null) });
+        }}
+      />
     </div>
   );
 }

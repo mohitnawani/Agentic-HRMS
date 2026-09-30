@@ -1,0 +1,570 @@
+"""Idempotent production bootstrap for a newly migrated database."""
+
+import asyncio
+from datetime import UTC, date, datetime, time, timedelta
+
+from email_validator import EmailNotValidError, validate_email
+from sqlalchemy import func, select
+
+from app.core.config import settings
+from app.core.security import hash_password
+from app.db.session import async_session
+from app.models.announcement import Announcement
+from app.models.attendance import Attendance, AttendanceStatus
+from app.models.department import Department
+from app.models.designation import Designation
+from app.models.employee import Employee
+from app.models.holiday import Holiday
+from app.models.leave import (
+    LeaveBalance,
+    LeaveRequest,
+    LeaveRequestStatus,
+    LeaveType,
+)
+from app.models.role import RoleEnum
+from app.models.user import User
+
+
+async def _get_or_create_department(session, name: str) -> Department:
+    department = await session.scalar(select(Department).where(Department.name == name))
+    if department is None:
+        department = Department(name=name)
+        session.add(department)
+        await session.flush()
+    return department
+
+
+async def _get_or_create_designation(
+    session, title: str, department: Department
+) -> Designation:
+    designation = await session.scalar(select(Designation).where(Designation.title == title))
+    if designation is None:
+        designation = Designation(title=title, department_id=department.id)
+        session.add(designation)
+        await session.flush()
+    return designation
+
+
+async def _get_or_create_leave_type(session, name: str, days: int) -> LeaveType:
+    leave_type = await session.scalar(select(LeaveType).where(LeaveType.name == name))
+    if leave_type is None:
+        leave_type = LeaveType(name=name, default_annual_days=days)
+        session.add(leave_type)
+        await session.flush()
+    return leave_type
+
+
+def _admin_credentials() -> tuple[str, str] | None:
+    if settings.bootstrap_admin_email is None and settings.bootstrap_admin_password is None:
+        return None
+    if settings.bootstrap_admin_email is None or settings.bootstrap_admin_password is None:
+        raise RuntimeError(
+            "BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD must be set together"
+        )
+    try:
+        email = validate_email(
+            settings.bootstrap_admin_email, check_deliverability=False
+        ).normalized.lower()
+    except EmailNotValidError as exc:
+        raise RuntimeError("BOOTSTRAP_ADMIN_EMAIL is not a valid email address") from exc
+    password = settings.bootstrap_admin_password.get_secret_value()
+    if len(password) < 12:
+        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD must contain at least 12 characters")
+    if len(password.encode("utf-8")) > 72:
+        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD cannot exceed 72 bytes")
+    return email, password
+
+
+# ---------------------------------------------------------------------------
+# Organization structure: system roles control permissions (Admin/HR/Employee
+# in RoleEnum); departments are org units; designations are job titles that
+# always belong to exactly one department.
+# ---------------------------------------------------------------------------
+
+DEPARTMENTS: tuple[str, ...] = (
+    "Human Resources",
+    "Engineering / IT",
+    "Finance",
+    "Sales",
+    "Marketing",
+    "Operations",
+    "Customer Support",
+    "Administration",
+)
+
+# department name -> job titles inside it.
+DESIGNATIONS: dict[str, tuple[str, ...]] = {
+    "Human Resources": (
+        "HR Manager",
+        "HR Executive",
+        "Recruiter",
+        "Talent Acquisition Specialist",
+    ),
+    "Engineering / IT": (
+        "Engineering Manager",
+        "Tech Lead",
+        "Software Engineer",
+        "Backend Developer",
+        "Frontend Developer",
+        "Full-Stack Developer",
+        "QA Engineer",
+        "DevOps Engineer",
+    ),
+    "Finance": (
+        "Finance Manager",
+        "Accountant",
+        "Payroll Executive",
+        "Financial Analyst",
+    ),
+    "Sales": (
+        "Sales Manager",
+        "Sales Executive",
+        "Business Development Executive",
+        "Account Manager",
+    ),
+    "Marketing": (
+        "Marketing Manager",
+        "Digital Marketing Executive",
+        "Content Executive",
+        "SEO Specialist",
+    ),
+    "Operations": (
+        "Operations Manager",
+        "Operations Executive",
+        "Project Coordinator",
+    ),
+    "Customer Support": (
+        "Support Manager",
+        "Customer Support Executive",
+        "Technical Support Executive",
+    ),
+    "Administration": (
+        "Admin Manager",
+        "Office Administrator",
+        "Administrative Executive",
+    ),
+}
+
+# ---------------------------------------------------------------------------
+# Demo seed data (fresh deploys only; every insert is get-or-create).
+# ---------------------------------------------------------------------------
+
+DEMO_PASSWORD = "DemoPass123!"
+
+DEMO_ADMIN_EMAILS: tuple[str, ...] = (
+    "admin.demo@company.com",
+    "admin.operations@company.com",
+    "admin.management@company.com",
+    "admin.support@company.com",
+)
+
+# email, system role, first name, last name, department, designation,
+# employee code, date of joining. HR uses the HR role in Human Resources;
+# everyone else uses the Employee role in their own department.
+DEMO_TEAM: tuple[tuple[str, RoleEnum, str, str, str, str, str, date], ...] = (
+    ("hr.demo@company.com", RoleEnum.HR, "Priya", "Nair", "Human Resources", "HR Manager", "EMP-1002", date(2023, 1, 15)),
+    ("rahul.verma@company.com", RoleEnum.EMPLOYEE, "Rahul", "Verma", "Engineering / IT", "Backend Developer", "EMP-1003", date(2023, 6, 1)),
+    ("amit.patel@company.com", RoleEnum.EMPLOYEE, "Amit", "Patel", "Engineering / IT", "Frontend Developer", "EMP-1004", date(2023, 9, 12)),
+    ("vaishali.gupta@company.com", RoleEnum.EMPLOYEE, "Vaishali", "Gupta", "Finance", "Accountant", "EMP-1005", date(2024, 2, 5)),
+    ("sneha.reddy@company.com", RoleEnum.EMPLOYEE, "Sneha", "Reddy", "Human Resources", "Recruiter", "EMP-1006", date(2024, 5, 20)),
+    ("arjun.mehta@company.com", RoleEnum.EMPLOYEE, "Arjun", "Mehta", "Sales", "Sales Executive", "EMP-1007", date(2024, 8, 11)),
+    ("kavya.iyer@company.com", RoleEnum.EMPLOYEE, "Kavya", "Iyer", "Marketing", "Digital Marketing Executive", "EMP-1008", date(2025, 3, 3)),
+)
+
+DEMO_HOLIDAYS: tuple[tuple[str, date], ...] = (
+    ("Gandhi Jayanti", date(2026, 10, 2)),
+    ("Christmas Day", date(2026, 12, 25)),
+    ("New Year Day", date(2027, 1, 1)),
+)
+
+DEMO_ANNOUNCEMENTS: tuple[tuple[str, str], ...] = (
+    (
+        "Welcome to the new HRMS portal",
+        "Attendance, leave requests, policies, and the HR assistant are now "
+        "available in one place. Please complete your profile details this week.",
+    ),
+    (
+        "Year-end leave reminders",
+        "Casual leave balances reset in January. Apply for pending 2026 leaves "
+        "before December 20 so approvals finish on time.",
+    ),
+    (
+        "Diwali holidays",
+        "The office will remain closed on October 20 for Diwali. Emergency "
+        "support stays reachable on Slack.",
+    ),
+    (
+        "New attendance policy",
+        "Check-in is due by 9:30 AM. Three late marks in a month trigger an HR review.",
+    ),
+    (
+        "Referral bonus program",
+        "Refer a friend for any open role and earn a bonus after their probation ends.",
+    ),
+    (
+        "Office timing change",
+        "Friday working hours are now 9 AM to 5 PM for the winter season.",
+    ),
+)
+
+# Full profile details for the demo team. Only blank fields are filled,
+# so edits made through the UI are never overwritten on redeploy.
+# phone, address, city, bank, account, ifsc, id proof type, id proof number.
+DEMO_DETAILS: dict[str, tuple[str, str, str, str, str, str, str, str]] = {
+    "hr.demo@company.com": ("9820012345", "12 MG Road", "Bengaluru", "HDFC Bank", "50100123456789", "HDFC0001234", "Aadhaar", "1234-5678-9012"),
+    "rahul.verma@company.com": ("9830012345", "45 Park Street", "Kolkata", "SBI", "30100234567890", "SBIN0060231", "PAN", "ABCDE1234F"),
+    "amit.patel@company.com": ("9840012345", "78 CG Road", "Ahmedabad", "ICICI Bank", "40100345678901", "ICIC0004052", "Aadhaar", "2345-6789-0123"),
+    "vaishali.gupta@company.com": ("9850012345", "90 Karol Bagh", "New Delhi", "HDFC Bank", "50100456789012", "HDFC0001104", "PAN", "BCDEF2345G"),
+    "sneha.reddy@company.com": ("9860012345", "23 Jubilee Hills", "Hyderabad", "SBI", "30100567890123", "SBIN0020756", "Aadhaar", "3456-7890-1234"),
+    "arjun.mehta@company.com": ("9870012345", "56 Linking Road", "Mumbai", "ICICI Bank", "40100678901234", "ICIC0001873", "PAN", "CDEFG3456H"),
+    "kavya.iyer@company.com": ("9880012345", "67 Anna Nagar", "Chennai", "HDFC Bank", "50100789012345", "HDFC0002241", "Aadhaar", "4567-8901-2345"),
+}
+
+
+async def _fill_demo_details(session, employees_by_email: dict[str, Employee]) -> None:
+    for email, details in DEMO_DETAILS.items():
+        employee = employees_by_email.get(email)
+        if employee is None:
+            continue
+        (phone, address, city, bank, account, ifsc, idt, idn) = details
+        if not employee.phone:
+            employee.phone = phone
+        if not employee.address:
+            employee.address = address
+        if not employee.city:
+            employee.city = city
+        if not employee.bank_name:
+            employee.bank_name = bank
+        if not employee.account_number:
+            employee.account_number = account
+        if not employee.ifsc_code:
+            employee.ifsc_code = ifsc
+        if not employee.id_proof_type:
+            employee.id_proof_type = idt
+        if not employee.id_proof_number:
+            employee.id_proof_number = idn
+    await session.flush()
+
+
+async def _get_or_create_user(session, email: str, role: RoleEnum, password_hash: str) -> User:
+    user = await session.scalar(select(User).where(func.lower(User.email) == email))
+    if user is None:
+        user = User(email=email, hashed_password=password_hash, role=role, is_active=True)
+        session.add(user)
+        await session.flush()
+    return user
+
+
+async def _ensure_employee(
+    session,
+    user: User,
+    first_name: str,
+    last_name: str,
+    date_of_joining: date,
+    department_id,
+    designation_id,
+    employee_code: str,
+) -> Employee:
+    employee = await session.scalar(select(Employee).where(Employee.user_id == user.id))
+    if employee is None:
+        code_taken = await session.scalar(
+            select(Employee).where(Employee.employee_code == employee_code)
+        )
+        employee = Employee(
+            user_id=user.id,
+            first_name=first_name,
+            last_name=last_name,
+            date_of_joining=date_of_joining,
+            department_id=department_id,
+            designation_id=designation_id,
+            employee_code=None if code_taken is not None else employee_code,
+        )
+        session.add(employee)
+        await session.flush()
+    return employee
+
+
+async def _ensure_leave_balances(session, employee: Employee, leave_types, year: int) -> None:
+    for leave_type in leave_types:
+        existing = await session.scalar(
+            select(LeaveBalance).where(
+                LeaveBalance.employee_id == employee.id,
+                LeaveBalance.leave_type_id == leave_type.id,
+                LeaveBalance.year == year,
+            )
+        )
+        if existing is None:
+            session.add(
+                LeaveBalance(
+                    employee_id=employee.id,
+                    leave_type_id=leave_type.id,
+                    year=year,
+                    total_days=leave_type.default_annual_days,
+                    used_days=0,
+                )
+            )
+    await session.flush()
+
+
+async def _seed_demo_data(session, *, departments, designations, leave_types, today: date) -> None:
+    """Seed a small demo team plus sample HR records. Safe to re-run."""
+    demo_hash = hash_password(DEMO_PASSWORD)
+    employees_by_email: dict[str, Employee] = {}
+    admin_users = [
+        await _get_or_create_user(session, email, RoleEnum.ADMIN, demo_hash)
+        for email in DEMO_ADMIN_EMAILS
+    ]
+    admin_user = admin_users[0]
+
+    for email, role, first, last, dept_name, desig_title, code, doj in DEMO_TEAM:
+        department = departments[dept_name]
+        designation = designations[desig_title]
+        if designation.department_id != department.id:
+            raise RuntimeError(
+                f"Demo data error: {desig_title} does not belong to {dept_name}"
+            )
+        user = await _get_or_create_user(session, email, role, demo_hash)
+        employee = await _ensure_employee(
+            session,
+            user,
+            first,
+            last,
+            doj,
+            department.id,
+            designation.id,
+            code,
+        )
+        await _ensure_leave_balances(session, employee, leave_types, today.year)
+        employees_by_email[email] = employee
+
+    await _fill_demo_details(session, employees_by_email)
+
+    casual = next(lt for lt in leave_types if lt.name == "Casual Leave")
+    sick = next(lt for lt in leave_types if lt.name == "Sick Leave")
+    # One pending + one approved leave request so both queues have content.
+    rahul = employees_by_email["rahul.verma@company.com"]
+    pending = await session.scalar(
+        select(LeaveRequest).where(
+            LeaveRequest.employee_id == rahul.id,
+            LeaveRequest.start_date == today + timedelta(days=5),
+        )
+    )
+    if pending is None:
+        session.add(
+            LeaveRequest(
+                employee_id=rahul.id,
+                leave_type_id=casual.id,
+                start_date=today + timedelta(days=5),
+                end_date=today + timedelta(days=6),
+                reason="Family function in hometown",
+                status=LeaveRequestStatus.PENDING,
+            )
+        )
+
+    amit = employees_by_email["amit.patel@company.com"]
+    approved = await session.scalar(
+        select(LeaveRequest).where(
+            LeaveRequest.employee_id == amit.id,
+            LeaveRequest.start_date == today - timedelta(days=10),
+        )
+    )
+    if approved is None:
+        session.add(
+            LeaveRequest(
+                employee_id=amit.id,
+                leave_type_id=sick.id,
+                start_date=today - timedelta(days=10),
+                end_date=today - timedelta(days=9),
+                reason="Down with fever",
+                status=LeaveRequestStatus.APPROVED,
+                reviewed_by=admin_user.id if admin_user else None,
+                reviewed_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
+        balance = await session.scalar(
+            select(LeaveBalance).where(
+                LeaveBalance.employee_id == amit.id,
+                LeaveBalance.leave_type_id == sick.id,
+                LeaveBalance.year == today.year,
+            )
+        )
+        if balance is not None:
+            balance.used_days += 2
+    await session.flush()
+
+    # A second pending request (HR queue), one more approval, one rejection.
+    async def _extra_request(email: str, type_id, start: date, end: date, reason: str):
+        employee = employees_by_email[email]
+        exists = await session.scalar(
+            select(LeaveRequest).where(
+                LeaveRequest.employee_id == employee.id,
+                LeaveRequest.start_date == start,
+            )
+        )
+        if exists is not None:
+            return exists
+        row = LeaveRequest(
+            employee_id=employee.id,
+            leave_type_id=type_id,
+            start_date=start,
+            end_date=end,
+            reason=reason,
+            status=LeaveRequestStatus.PENDING,
+        )
+        session.add(row)
+        await session.flush()
+        return row
+
+    vaishali_pending = await _extra_request(
+        "vaishali.gupta@company.com", sick.id,
+        today + timedelta(days=3), today + timedelta(days=3), "Down with flu",
+    )
+    arjun_approved = await _extra_request(
+        "arjun.mehta@company.com", casual.id,
+        today + timedelta(days=10), today + timedelta(days=11), "Vacation",
+    )
+    if arjun_approved.status == LeaveRequestStatus.PENDING:
+        arjun_approved.status = LeaveRequestStatus.APPROVED
+        arjun_approved.reviewed_by = admin_user.id if admin_user else None
+        arjun_approved.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+        bal = await session.scalar(
+            select(LeaveBalance).where(
+                LeaveBalance.employee_id == arjun_approved.employee_id,
+                LeaveBalance.leave_type_id == casual.id,
+                LeaveBalance.year == today.year,
+            )
+        )
+        if bal is not None:
+            bal.used_days += 2
+    kavya_rejected = await _extra_request(
+        "kavya.iyer@company.com", casual.id,
+        today + timedelta(days=15), today + timedelta(days=20), "Long trip",
+    )
+    if kavya_rejected.status == LeaveRequestStatus.PENDING:
+        kavya_rejected.status = LeaveRequestStatus.REJECTED
+        kavya_rejected.reviewed_by = admin_user.id if admin_user else None
+        kavya_rejected.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+    await session.flush()
+
+    # Attendance for the last 5 weekdays so dashboards/charts have content.
+    seeded_days = 0
+    lookback = 1
+    while seeded_days < 5 and lookback <= 10:
+        day = today - timedelta(days=lookback)
+        lookback += 1
+        if day.weekday() >= 5:  # skip weekends
+            continue
+        for employee in employees_by_email.values():
+            exists = await session.scalar(
+                select(Attendance).where(
+                    Attendance.employee_id == employee.id, Attendance.date == day
+                )
+            )
+            if exists is None:
+                session.add(
+                    Attendance(
+                        employee_id=employee.id,
+                        date=day,
+                        check_in=datetime.combine(day, time(9, 30)),
+                        check_out=datetime.combine(day, time(18, 30)),
+                        status=AttendanceStatus.PRESENT,
+                    )
+                )
+        seeded_days += 1
+    await session.flush()
+
+    # One-time variety pass so calendars/dashboards show realistic states.
+    # Skipped entirely once any non-present record exists (never touches
+    # user-edited or previously varied rows).
+    varied = await session.scalar(
+        select(Attendance).where(Attendance.status != AttendanceStatus.PRESENT).limit(1)
+    )
+    if varied is None:
+        variety = await session.scalars(
+            select(Attendance)
+            .where(Attendance.status == AttendanceStatus.PRESENT)
+            .order_by(Attendance.date, Attendance.employee_id)
+            .limit(4)
+        )
+        rows = list(variety.all())
+        if len(rows) >= 4:
+            rows[0].check_in = datetime.combine(rows[0].date, time(10, 15))
+            rows[0].status = AttendanceStatus.LATE
+            rows[1].check_out = datetime.combine(rows[1].date, time(15, 0))
+            rows[1].status = AttendanceStatus.HALF_DAY
+            rows[2].check_out = None
+            await session.delete(rows[3])
+            await session.flush()
+
+    for name, day in DEMO_HOLIDAYS:
+        exists = await session.scalar(select(Holiday).where(Holiday.name == name))
+        if exists is None:
+            session.add(Holiday(name=name, date=day))
+    await session.flush()
+
+    if admin_user is not None:
+        for title, body in DEMO_ANNOUNCEMENTS:
+            exists = await session.scalar(
+                select(Announcement).where(Announcement.title == title)
+            )
+            if exists is None:
+                session.add(
+                    Announcement(
+                        title=title, body=body, created_by=admin_user.id, is_active=True
+                    )
+                )
+    await session.flush()
+
+
+async def bootstrap() -> None:
+    credentials = _admin_credentials()
+    today = datetime.now(UTC).date()
+    async with async_session() as session:
+        departments: dict[str, Department] = {}
+        for dept_name in DEPARTMENTS:
+            departments[dept_name] = await _get_or_create_department(session, dept_name)
+        designations: dict[str, Designation] = {}
+        for dept_name, titles in DESIGNATIONS.items():
+            for title in titles:
+                designations[title] = await _get_or_create_designation(
+                    session, title, departments[dept_name]
+                )
+        leave_types = [
+            await _get_or_create_leave_type(session, "Casual Leave", 12),
+            await _get_or_create_leave_type(session, "Sick Leave", 6),
+        ]
+        if credentials is not None:
+            email, password = credentials
+            user = await session.scalar(
+                select(User).where(func.lower(User.email) == email)
+            )
+            if user is not None and user.role != RoleEnum.ADMIN:
+                raise RuntimeError(
+                    "BOOTSTRAP_ADMIN_EMAIL already belongs to a non-admin user"
+                )
+            if user is None:
+                user = User(
+                    email=email,
+                    hashed_password=hash_password(password),
+                    role=RoleEnum.ADMIN,
+                    is_active=True,
+                )
+                session.add(user)
+                await session.flush()
+
+        await session.commit()
+        if settings.seed_demo_data:
+            await _seed_demo_data(
+                session,
+                departments=departments,
+                designations=designations,
+                leave_types=leave_types,
+                today=today,
+            )
+            await session.commit()
+            print("Demo seed data ensured.")
+    print("Database bootstrap completed.")
+
+
+if __name__ == "__main__":
+    asyncio.run(bootstrap())

@@ -24,9 +24,89 @@ async def test_create_and_fetch_employee(client, admin_token):
 
 
 @pytest.mark.asyncio
-async def test_upload_employee_photo(client, admin_token):
-    import cloudinary.uploader
+async def test_admin_role_cannot_be_created_as_employee(client, admin_token):
+    response = await client.post(
+        "/api/v1/employees",
+        json={
+            "email": f"management_{uuid.uuid4().hex[:6]}@example.com",
+            "password": "testpass123",
+            "first_name": "Management",
+            "last_name": "Admin",
+            "date_of_joining": "2026-09-15",
+            "role": "admin",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 400
+    assert "management-only" in response.json()["detail"]
 
+
+@pytest.mark.asyncio
+async def test_employee_email_is_normalized_and_unique_case_insensitively(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    local_part = f"emailcase_{uuid.uuid4().hex[:6]}"
+    mixed_case_email = f"  {local_part.upper()}@GMAIL.COM  "
+    payload = {
+        "email": mixed_case_email,
+        "password": "testpass123",
+        "first_name": "Email",
+        "last_name": "Case",
+        "date_of_joining": "2026-09-15",
+    }
+
+    created = await client.post("/api/v1/employees", json=payload, headers=headers)
+    assert created.status_code == 200
+    assert created.json()["email"] == f"{local_part}@gmail.com"
+
+    duplicate = await client.post(
+        "/api/v1/employees",
+        json={**payload, "email": f"{local_part}@gmail.com"},
+        headers=headers,
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Email already registered"
+
+    employee_id = created.json()["id"]
+    assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "email",
+    [
+        "plainaddress",
+        "name@",
+        "@gmail.com",
+        ".name@gmail.com",
+        "name..dots@gmail.com",
+        "name@gmail",
+        "name@-gmail.com",
+        123,
+    ],
+)
+async def test_employee_rejects_invalid_email(client, admin_token, email):
+    response = await client.post(
+        "/api/v1/employees",
+        json={
+            "email": email,
+            "password": "testpass123",
+            "first_name": "Invalid",
+            "last_name": "Email",
+            "date_of_joining": "2026-09-15",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_employee_photo(client, admin_token, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.v1.employees.cloudinary.uploader.upload",
+        lambda *args, **kwargs: {
+            "secure_url": "https://res.cloudinary.com/test/image/upload/avatar.png",
+        },
+    )
     headers = {"Authorization": f"Bearer {admin_token}"}
     email = f"photo_{uuid.uuid4().hex[:6]}@example.com"
     created = await client.post("/api/v1/employees", json={
@@ -57,8 +137,6 @@ async def test_upload_employee_photo(client, admin_token):
     assert good.status_code == 200
     assert good.json()["photo_url"].startswith("https://")
 
-    public_id = good.json()["photo_url"].rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    cloudinary.uploader.destroy(f"hrms/employees/{public_id}", resource_type="image")
     assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
 
 
@@ -100,30 +178,30 @@ async def test_hr_delete_rules(client, admin_token, employee_token):
     h_emp = {"Authorization": f"Bearer {employee_token}"}
     h_hr, hr_email = await _hr_headers(client, admin_token)
 
-    # HR can delete an employee profile
+    # Employee deletion is an Admin-only management operation.
     victim_id = await _employee_profile_id(client, admin_token)
-    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_hr)).status_code == 204
+    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_hr)).status_code == 403
+    assert (await client.delete(f"/api/v1/employees/{victim_id}", headers=h_admin)).status_code == 204
 
     # HR cannot delete its own (HR-role) profile
     own_profile = await _profile_id_for_email(client, admin_token, hr_email)
     assert (await client.delete(f"/api/v1/employees/{own_profile}", headers=h_hr)).status_code == 403
 
     # HR cannot delete another HR's profile; admin can delete anyone
-    h_hr2, hr2_email = await _hr_headers(client, admin_token)
+    _h_hr2, hr2_email = await _hr_headers(client, admin_token)
     hr2_profile = await _profile_id_for_email(client, admin_token, hr2_email)
     assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_hr)).status_code == 403
     assert (await client.delete(f"/api/v1/employees/{hr2_profile}", headers=h_admin)).status_code == 204
 
-    # HR cannot delete an admin-role profile either
+    # Admin accounts are management-only and never appear as employees.
     adm_email = f"admprof_{uuid.uuid4().hex[:6]}@example.com"
     adm = await client.post("/api/v1/users", json={
         "email": adm_email, "password": "testpass123",
         "role": "admin", "first_name": "Adm", "last_name": "Prof",
     }, headers=h_admin)
     assert adm.status_code == 200
-    adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
-    assert (await client.delete(f"/api/v1/employees/{adm_profile}", headers=h_hr)).status_code == 403
-    assert (await client.delete(f"/api/v1/employees/{adm_profile}", headers=h_admin)).status_code == 204
+    listed = (await client.get("/api/v1/employees", headers=h_admin)).json()
+    assert all(employee["email"] != adm_email for employee in listed)
 
     # employee role cannot delete anyone
     victim2 = await _employee_profile_id(client, admin_token, prefix="victim2")
@@ -141,16 +219,93 @@ async def test_hr_edit_rules(client, admin_token):
         f"/api/v1/employees/{victim}", json={"phone": "9999999999"}, headers=h_hr
     )).status_code == 200
 
-    # HR cannot edit an admin-role profile
+    # Admin accounts are managed from Users, not from employee profiles.
     adm_email = f"admupd_{uuid.uuid4().hex[:6]}@example.com"
     await client.post("/api/v1/users", json={
         "email": adm_email, "password": "testpass123",
         "role": "admin", "first_name": "Adm", "last_name": "Upd",
     }, headers=h_admin)
-    adm_profile = await _profile_id_for_email(client, admin_token, adm_email)
-    assert (await client.patch(
-        f"/api/v1/employees/{adm_profile}", json={"phone": "111"}, headers=h_hr
-    )).status_code == 403
-    assert (await client.patch(
-        f"/api/v1/employees/{adm_profile}", json={"phone": "111"}, headers=h_admin
-    )).status_code == 200
+    listed = (await client.get("/api/v1/employees", headers=h_admin)).json()
+    assert all(employee["email"] != adm_email for employee in listed)
+
+
+@pytest.mark.asyncio
+async def test_employee_role_can_be_changed_between_employee_and_hr(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    employee_id = await _employee_profile_id(client, admin_token, prefix="roleedit")
+
+    promoted = await client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"role": "hr"},
+        headers=headers,
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["role"] == "hr"
+
+    rejected = await client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"role": "admin"},
+        headers=headers,
+    )
+    assert rejected.status_code == 400
+
+    demoted = await client.patch(
+        f"/api/v1/employees/{employee_id}",
+        json={"role": "employee"},
+        headers=headers,
+    )
+    assert demoted.status_code == 200, demoted.text
+    assert demoted.json()["role"] == "employee"
+    assert (await client.delete(f"/api/v1/employees/{employee_id}", headers=headers)).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_employee_rejects_bad_phone_and_blank_names(client, admin_token):
+    h = {"Authorization": f"Bearer {admin_token}"}
+    base = {
+        "email": f"bad_{uuid.uuid4().hex[:6]}@example.com", "password": "testpass123",
+        "first_name": "Bad", "last_name": "Data",
+        "date_of_joining": "2026-09-15",
+    }
+    assert (await client.post("/api/v1/employees", json={**base, "phone": "111"}, headers=h)).status_code == 422
+    assert (await client.post("/api/v1/employees", json={**base, "first_name": "   "}, headers=h)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_designation_must_belong_to_department(client, admin_token):
+    h = {'Authorization': f'Bearer {admin_token}'}
+    departments = (await client.get('/api/v1/departments', headers=h)).json()
+    designations = (await client.get('/api/v1/designations', headers=h)).json()
+    hr_dept = next(d for d in departments if d['name'] == 'Human Resources')
+    backend_dev = next(d for d in designations if d['title'] == 'Backend Developer')
+    assert backend_dev['department_name'] == 'Engineering / IT'
+
+    base = {
+        'email': f'mismatch_{uuid.uuid4().hex[:6]}@example.com', 'password': 'testpass123',
+        'first_name': 'Mismatch', 'last_name': 'Case',
+        'date_of_joining': '2026-09-15',
+    }
+    bad = await client.post('/api/v1/employees', json={
+        **base, 'department_id': hr_dept['id'], 'designation_id': backend_dev['id'],
+    }, headers=h)
+    assert bad.status_code == 400
+    assert 'does not belong' in bad.json()['detail']
+
+    ok = await client.post('/api/v1/employees', json={
+        **base, 'designation_id': backend_dev['id'],
+    }, headers=h)
+    assert ok.status_code == 200
+    assert ok.json()['department_id'] == backend_dev['department_id']
+
+
+@pytest.mark.asyncio
+async def test_designation_requires_department(client, admin_token):
+    h = {'Authorization': f'Bearer {admin_token}'}
+    missing = await client.post('/api/v1/designations', json={'title': 'Lone Title'}, headers=h)
+    assert missing.status_code == 422
+    bad_dept = await client.post(
+        '/api/v1/designations',
+        json={'title': 'Lone Title', 'department_id': '00000000-0000-0000-0000-000000000000'},
+        headers=h,
+    )
+    assert bad_dept.status_code == 404

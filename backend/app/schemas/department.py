@@ -1,16 +1,19 @@
 # app/schemas/department.py
 import uuid
-from pydantic import BaseModel
+from typing import Annotated
+from pydantic import BaseModel, Field
+
+from app.schemas.common import BlankableStr, StrippedStr
 
 
 class DepartmentCreate(BaseModel):
-    name: str
-    description: str | None = None
+    name: Annotated[StrippedStr, Field(min_length=1, max_length=100)]
+    description: Annotated[BlankableStr, Field(max_length=500)] = None
 
 
 class DepartmentUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    name: Annotated[StrippedStr, Field(min_length=1, max_length=100)] | None = None
+    description: Annotated[BlankableStr, Field(max_length=500)] = None
 
 
 class DepartmentRead(BaseModel):

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "wfh_policy",
+    "prompt": "What's the work-from-home policy?",
+    "expected_intent": "rag"
+  },
+  {
+    "id": "travel_policy",
+    "prompt": "Can you explain the company travel policy?",
+    "expected_intent": "rag"
+  },
+  {
+    "id": "leave_balance",
+    "prompt": "How many leave days do I have remaining?",
+    "expected_intent": "database"
+  },
+  {
+    "id": "attendance",
+    "prompt": "Show my attendance",
+    "expected_intent": "database"
+  },
+  {
+    "id": "employee_list",
+    "prompt": "List all employees in Engineering",
+    "expected_intent": "database"
+  },
+  {
+    "id": "create_employee",
+    "prompt": "Add employee Priya Singh",
+    "expected_intent": "action"
+  },
+  {
+    "id": "mutation_priority",
+    "prompt": "Update this employee's department",
+    "expected_intent": "action"
+  },
+  {
+    "id": "approve_leave",
+    "prompt": "Approve this leave request",
+    "expected_intent": "action"
+  },
+  {
+    "id": "greeting",
+    "prompt": "Hello there",
+    "expected_intent": "general"
+  },
+  {
+    "id": "thanks",
+    "prompt": "Thank you for your help",
+    "expected_intent": "general"
+  }
+]

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Layers, LayoutDashboard, Users, CalendarDays, FileText, Bot, Building2, BriefcaseBusiness, Megaphone, UserRound, LogOut } from "lucide-react";
 
-const NAV_ICONS = { Dashboard: LayoutDashboard, "My Profile": UserRound, Employees: Users, Attendance: CalendarDays, Leave: CalendarDays, "Leave Approvals": CalendarDays, Policies: FileText, Assistant: Bot, Departments: Building2, Designations: BriefcaseBusiness, Users, Holidays: CalendarDays, Announcements: Megaphone };
+const NAV_ICONS = { Dashboard: LayoutDashboard, "My Profile": UserRound, Employees: Users, Attendance: CalendarDays, Leave: CalendarDays, "My Leave": CalendarDays, "Leave Approvals": CalendarDays, Policies: FileText, Assistant: Bot, Departments: Building2, Designations: BriefcaseBusiness, Users, Holidays: CalendarDays, Announcements: Megaphone };
 
 const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
   employee: [
@@ -13,7 +13,9 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "My Profile", path: "/employee/profile" },
     { label: "Attendance", path: "/employee/attendance" },
     { label: "Leave", path: "/employee/leave" },
+    { label: "Holidays", path: "/employee/holidays" },
     { label: "Policies", path: "/employee/policies" },
+    { label: "Announcements", path: "/employee/announcements" },
     { label: "Assistant", path: "/employee/assistant" },
   ],
   hr: [
@@ -21,6 +23,10 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
     { label: "Employees", path: "/hr/employees" },
     { label: "Attendance", path: "/hr/attendance" },
     { label: "Leave Approvals", path: "/hr/leave" },
+    { label: "Departments", path: "/hr/departments" },
+    { label: "Designations", path: "/hr/designations" },
+    { label: "My Leave", path: "/hr/my-leave" },
+    { label: "Holidays", path: "/hr/holidays" },
     { label: "Policies", path: "/hr/policies" },
     { label: "Announcements", path: "/hr/announcements" },
     { label: "Assistant", path: "/hr/assistant" },
@@ -28,10 +34,13 @@ const NAV_ITEMS: Record<string, { label: string; path: string }[]> = {
   admin: [
     { label: "Dashboard", path: "/admin/dashboard" },
     { label: "Employees", path: "/admin/employees" },
+    { label: "Attendance", path: "/admin/attendance" },
     { label: "Departments", path: "/admin/departments" },
     { label: "Designations", path: "/admin/designations" },
     { label: "Users", path: "/admin/users" },
     { label: "Holidays", path: "/admin/holidays" },
+    { label: "Leave Approvals", path: "/admin/approvals" },
+    { label: "Policies", path: "/admin/policies" },
     { label: "Announcements", path: "/admin/announcements" },
     { label: "Assistant", path: "/admin/assistant" },
   ],

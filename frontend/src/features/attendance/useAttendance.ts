@@ -44,3 +44,15 @@ export const useCorrectAttendance = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
   });
 };
+
+export const useCorrectAttendanceForDate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, date, data }: {
+      employeeId: string;
+      date: string;
+      data: api.AttendanceDateCorrectionPayload;
+    }) => api.correctAttendanceForDate(employeeId, date, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
+  });
+};

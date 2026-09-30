@@ -5,19 +5,35 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import { useAppSelector } from "@/store/hooks";
-import { usePolicies, useUploadPolicy } from "./usePolicies";
-import { getPolicyDownloadUrl, type PolicyDocument } from "./policyApi";
+import { useDeletePolicy, usePolicies, useUpdatePolicy, useUploadPolicy } from "./usePolicies";
+import { downloadPolicyFile, type PolicyDocument } from "./policyApi";
 
 export default function PoliciesPage() {
   const role = useAppSelector((s) => s.auth.role);
   const [category, setCategory] = useState<string>("all");
-  const { data: policies, isLoading, isError } = usePolicies(category);
+  const { data: allPolicies, isLoading, isError } = usePolicies();
   const uploadPolicy = useUploadPolicy();
+  const deletePolicy = useDeletePolicy();
+  const updatePolicy = useUpdatePolicy();
   const [open, setOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<PolicyDocument | null>(null);
+  const [toEdit, setToEdit] = useState<PolicyDocument | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editStep, setEditStep] = useState<0 | 1>(0);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<{
@@ -25,7 +41,10 @@ export default function PoliciesPage() {
   }>();
 
   const canUpload = role === "admin" || role === "hr";
-  const categories = ["all", ...new Set((policies ?? []).map((p) => p.category))];
+  const categories = ["all", ...new Set((allPolicies ?? []).map((p) => p.category))];
+  const policies = category === "all"
+    ? allPolicies
+    : allPolicies?.filter((policy) => policy.category === category);
 
   const onSubmit = async (values: { title: string; category: string; file: FileList }) => {
     const file = values.file?.[0];
@@ -38,9 +57,18 @@ export default function PoliciesPage() {
   const handleDownload = async (doc: PolicyDocument) => {
     setDownloadingId(doc.id);
     try {
-      // Backend hands out the Cloudinary URL as JSON; the browser fetches it
-      // directly with no auth header, so nothing leaks and nothing 401s.
-      window.open(await getPolicyDownloadUrl(doc.id), "_blank");
+      const blob = await downloadPolicyFile(doc.id);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeTitle = doc.title.replace(/[\\/:*?"<>|]+/g, "_").trim() || "policy";
+      link.href = objectUrl;
+      link.download = safeTitle.toLowerCase().endsWith(".pdf")
+        ? safeTitle
+        : `${safeTitle}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
     } finally {
       setDownloadingId(null);
     }
@@ -98,26 +126,163 @@ export default function PoliciesPage() {
           rowKey={(d: PolicyDocument) => d.id}
           data={policies ?? []}
           emptyTitle="No policy documents yet"
+          searchableText={(d) => `${d.title} ${d.category}`}
+          searchPlaceholder="Search policies by title or category..."
           columns={[
             { header: "Title", render: (d) => d.title },
             { header: "Category", render: (d) => d.category },
             { header: "Uploaded", render: (d) => new Date(d.created_at).toLocaleDateString() },
             {
-              header: "File",
+              header: "Actions",
               render: (d) => (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={downloadingId === d.id}
-                  onClick={() => handleDownload(d)}
-                >
-                  {downloadingId === d.id ? "Opening..." : "Download"}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={downloadingId === d.id}
+                    onClick={() => handleDownload(d)}
+                  >
+                    {downloadingId === d.id ? "Downloading..." : "Download"}
+                  </Button>
+                  {canUpload && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setToEdit(d);
+                        setEditTitle(d.title);
+                        setEditCategory(d.category);
+                        setEditStep(0);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                  {canUpload && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setToDelete(d)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </div>
               ),
             },
           ]}
         />
       )}
+
+      <Dialog open={!!toEdit} onOpenChange={(nextOpen) => !nextOpen && setToEdit(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Edit Policy — Step {editStep + 1} of 2
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (editStep === 0) {
+                if (editTitle.trim()) setEditStep(1);
+                return;
+              }
+              if (!toEdit || !editTitle.trim() || !editCategory.trim()) return;
+              await updatePolicy.mutateAsync({
+                id: toEdit.id,
+                data: { title: editTitle.trim(), category: editCategory.trim() },
+              });
+              setToEdit(null);
+            }}
+          >
+            {editStep === 0 ? (
+              <div className="space-y-1">
+                <Label>Policy title</Label>
+                <Input
+                  value={editTitle}
+                  onChange={(event) => setEditTitle(event.target.value)}
+                  required
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  The current title is prefilled. Edit it or leave it unchanged.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label>Policy category</Label>
+                <Input
+                  value={editCategory}
+                  onChange={(event) => setEditCategory(event.target.value)}
+                  required
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  The current category is prefilled. Edit it or leave it unchanged.
+                </p>
+              </div>
+            )}
+            <div className="flex gap-2">
+              {editStep === 1 && (
+                <Button type="button" variant="outline" onClick={() => setEditStep(0)}>
+                  Back
+                </Button>
+              )}
+              {editStep === 0 ? (
+                <Button
+                  type="button"
+                  disabled={!editTitle.trim()}
+                  onClick={() => setEditStep(1)}
+                >
+                  Continue
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  disabled={updatePolicy.isPending || !editCategory.trim()}
+                >
+                  {updatePolicy.isPending ? "Saving..." : "Save changes"}
+                </Button>
+              )}
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!toDelete} onOpenChange={(nextOpen) => !nextOpen && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete policy?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes “{toDelete?.title}”, its PDF, and all indexed RAG chunks.
+              The assistant will no longer use it for answers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep policy</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deletePolicy.isPending}
+              onClick={() => {
+                if (!toDelete) return;
+                deletePolicy.mutate(toDelete.id, {
+                  onSuccess: () => setToDelete(null),
+                });
+              }}
+            >
+              {deletePolicy.isPending ? "Deleting..." : "Delete policy"}
+            </Button>
+          </AlertDialogFooter>
+          {deletePolicy.isError && (
+            <p className="text-sm text-destructive">
+              The policy could not be deleted. Nothing was removed; please try again.
+            </p>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

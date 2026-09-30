@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
 from app.models.announcement import Announcement
+from app.models.role import RoleEnum
 from app.models.user import User
 from app.schemas.announcement import AnnouncementCreate, AnnouncementRead, AnnouncementUpdate
 
@@ -29,8 +30,14 @@ async def create_announcement(
 
 
 @router.get("", response_model=list[AnnouncementRead], dependencies=[Depends(require_permission("announcement:read"))])
-async def list_announcements(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Announcement).order_by(Announcement.created_at.desc()))
+async def list_announcements(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Announcement).order_by(Announcement.created_at.desc())
+    if current_user.role == RoleEnum.EMPLOYEE:
+        stmt = stmt.where(Announcement.is_active.is_(True))
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
